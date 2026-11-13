@@ -1,9 +1,13 @@
-import contextlib, io, traceback, os, time, httpx, datetime, re
+import contextlib, io, traceback, os, time, httpx, datetime, re, signal
 from dotenv import load_dotenv
 from dataclasses import dataclass
 from pydantic import Field
+from models import SolutionOutput, StepMetrics
 
 load_dotenv()
+
+MAX_RETRIES = 3
+EXEC_TIMEOUT = 30  # secondes
 
 
 @dataclass
@@ -69,13 +73,27 @@ def final_answer(value: str) -> None:
     raise FinalAnswer(value)
 
 
+class ExecTimeout(BaseException):
+    pass
+
+
+def _timeout(signum, frame):
+    raise ExecTimeout()
+
+
 def lancer(code: str, namespace: dict) -> str:
     boite = io.StringIO()
+    signal.signal(signal.SIGALRM, _timeout)
+    signal.alarm(EXEC_TIMEOUT)
     try:
         with contextlib.redirect_stdout(boite):
             exec(code, namespace)
+    except ExecTimeout:
+        boite.write(f"\n[TIMEOUT {EXEC_TIMEOUT}s: output above is partial]")
     except Exception:
         boite.write(traceback.format_exc())
+    finally:
+        signal.alarm(0)
     return boite.getvalue()
 
 
@@ -90,18 +108,37 @@ Use print() to see values. When you have the answer, call final_answer(answer).
 """
 
 
-def run_agent(task: str, max_iterations: int = 5):
+def run_agent(
+    task: str,
+    max_iterations: int = 10,
+    task_id: str = "",
+    benchmark: str = "mbpp",
+) -> SolutionOutput:
+    start = time.perf_counter()
     namespace = {"final_answer": final_answer}
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
     ]
+    steps, requests = [], 0
+    success, solution, error = False, "", "max_iterations reached"
     for i in range(1, max_iterations + 1):
-        try:
-            llm_response = generate(messages)
-        except httpx.HTTPStatusError as e:
-            print(e)
+        for retries in range(MAX_RETRIES + 1):
+            requests += 1
+            try:
+                llm_response = generate(messages, stop=["<end_code>"])
+                break
+            except (httpx.HTTPError, KeyError, ValueError) as e:
+                last_error = e
+                time.sleep(2**retries)
+        else:
+            error = f"LLM call failed after {retries} retries: {last_error!r}"
+            break
+        messages.append(
+            {"role": "assistant", "content": llm_response.llm_output}
+        )
         code = extract_code(llm_response.llm_output)
+        answer = None
         if code is None:
             observation = (
                 "No valid code block was found in the model’s response"
@@ -110,8 +147,52 @@ def run_agent(task: str, max_iterations: int = 5):
             try:
                 observation = lancer(code, namespace)
             except FinalAnswer as f:
-                return f.value
+                answer, observation = str(f.value), "final_answer() called"
+            else:
+                if len(observation) > 4000:
+                    observation = (
+                        observation[:2000]
+                        + "\n[output truncated]\n"
+                        + observation[-2000:]
+                    )
+                observation = observation or "(no output, use print())"
+                reply = llm_response.llm_output.split("<end_code>")[0]
+                if "```" not in reply.partition("```python\n")[2]:
+                    observation = (
+                        "[WARNING: code block not closed with ```, "
+                        "executed anyway]\n" + observation
+                    )
+        steps.append(
+            StepMetrics(
+                step=i,
+                input_tokens=llm_response.input_tokens,
+                output_tokens=llm_response.output_tokens,
+                request_time_ms=llm_response.request_time_ms,
+                api_url=llm_response.api_url,
+                model_name=llm_response.model_name,
+                llm_output=llm_response.llm_output,
+                sandbox_input=code or "",
+                sandbox_output=observation,
+                retries=retries,
+            )
+        )
+        if answer is not None:
+            success, solution, error = True, answer, None
+            break
         messages.append(
             {"role": "user", "content": f"'observation': {observation}"}
         )
-    return None
+    return SolutionOutput(
+        task_id=task_id,
+        benchmark=benchmark,
+        success=success,
+        solution=solution,
+        iterations=len(steps),
+        total_requests=requests,
+        total_input_tokens=sum(s.input_tokens for s in steps),
+        total_output_tokens=sum(s.output_tokens for s in steps),
+        total_time_seconds=time.perf_counter() - start,
+        steps=steps,
+        system_prompt=SYSTEM_PROMPT,
+        error=error,
+    )
