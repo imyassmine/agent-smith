@@ -8,6 +8,7 @@ load_dotenv()
 
 MAX_RETRIES = 3
 EXEC_TIMEOUT = 30  # secondes
+SIZE_LIMIT = 4000
 
 
 @dataclass
@@ -24,7 +25,7 @@ class LLMResponse:
 
 
 def generate(
-    messages: list[dict], stop: list[str] | None = None
+    messages: list[dict], stop_sequences: list[str] | None = None
 ) -> LLMResponse:
     """
     Calls LLM and returns the generated text and its metrics.
@@ -38,7 +39,7 @@ def generate(
         json={
             "model": os.environ["MODEL"],
             "messages": messages,
-            "stop": stop,
+            "stop": stop_sequences,
         },
         timeout=30.0,
     )
@@ -55,13 +56,18 @@ def generate(
     )
 
 
-def extract_code(text: str) -> str | None:
+def extract_code(text: str) -> tuple[str, str] | None:
     """Return the first Python code block before <end_code>, or None."""
     text = text.split("<end_code>")[0]
     parts = text.split("```python\n", 1)
     if len(parts) < 2:
         return None
-    return parts[1].split("```")[0]
+    feedback = (
+        "code block was malformed but was interpreted anyway\n"
+        if "```" not in parts[1]
+        else ""
+    )
+    return parts[1].split("```")[0], feedback
 
 
 class FinalAnswer(BaseException):
@@ -83,8 +89,12 @@ def _timeout(_signum, _frame):
 
 def execute_safe_code(code: str, namespace: dict) -> str:
     buffer = io.StringIO()
-    signal.signal(signal.SIGALRM, _timeout) # enregistre la fonction à appeler quand le signal à surveiller arrive
-    signal.alarm(EXEC_TIMEOUT) # programme une alarme pour qu'elle se déclenche après EXEC_TIMEOUT
+    signal.signal(
+        signal.SIGALRM, _timeout
+    )  # enregistre la fonction à appeler quand le signal à surveiller arrive
+    signal.alarm(
+        EXEC_TIMEOUT
+    )  # programme une alarme pour qu'elle se déclenche après EXEC_TIMEOUT
     try:
         with contextlib.redirect_stdout(buffer):
             exec(code, namespace)
@@ -93,7 +103,7 @@ def execute_safe_code(code: str, namespace: dict) -> str:
     except Exception:
         buffer.write(traceback.format_exc())
     finally:
-        signal.alarm(0) # annule l'alarme restante
+        signal.alarm(0)  # annule l'alarme restante
     return buffer.getvalue()
 
 
@@ -103,7 +113,7 @@ Reply with a short thought, then ONE code block:
 # your code
 ```
 <end_code>
-Your code is executed and you receive what it printed as an observation.
+Your code is executed and you receive what it printed as an feedback.
 Use print() to see values. When you have the answer, call final_answer(answer).
 """
 
@@ -120,47 +130,44 @@ def run_agent(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
     ]
+
     steps, requests = [], 0
-    success, solution, error = False, "", "max_iterations reached"
+    error = "max_iterations reached"
     for i in range(1, max_iterations + 1):
-        for retries in range(MAX_RETRIES + 1):
+        for retry in range(MAX_RETRIES + 1):
             requests += 1
             try:
-                llm_response = generate(messages, stop=["<end_code>"])
-                break
-            except (httpx.HTTPStatusError, KeyError, ValueError) as e:
+                llm_response = generate(
+                    messages, stop_sequences=["<end_code>"]
+                )
+                last_error = None
+            except httpx.HTTPStatusError as e:
                 last_error = e
-                time.sleep(2**retries) # attente qui double à chaque échec
-        else:
-            error = f"LLM call failed after {retries} retries: {last_error}"
+                time.sleep(2**retry)  # attente qui double à chaque échec
+        if last_error:
+            error = f"LLM call failed after {retry} retries: {last_error}"
             break
         messages.append(
             {"role": "assistant", "content": llm_response.llm_output}
         )
-        code = extract_code(llm_response.llm_output)
+        code, feedback = extract_code(llm_response.llm_output)
         answer = None
         if code is None:
-            observation = (
-                "No valid code block was found in the model’s response"
-            )
+            feedback = "No valid code block was found in the model’s response"
         else:
             try:
-                observation = execute_safe_code(code, namespace)
+                feedback += (
+                    execute_safe_code(code, namespace)
+                    or "(no output, use print() to see values)"
+                )  # Rappel du prompt
             except FinalAnswer as f:
-                answer, observation = f.value, "final_answer() called"
-            else:
-                if len(observation) > 4000:
-                    observation = (
-                        observation[:2000]
+                answer, feedback = f.value, "final_answer() called"
+            if answer is None:
+                if len(feedback) > SIZE_LIMIT:
+                    feedback = (
+                        feedback[: SIZE_LIMIT / 2]
                         + "\nTool output was truncated due to size limits\n"
-                        + observation[-2000:]
-                    )
-                observation = observation or "(no output, use print())"
-                reply = llm_response.llm_output.split("<end_code>")[0]
-                if "```" not in reply.partition("```python\n")[2]:
-                    observation = (
-                        "[WARNING: code block not closed with ```, "
-                        "executed anyway]\n" + observation
+                        + feedback[-SIZE_LIMIT / 2 :]
                     )
         steps.append(
             StepMetrics(
@@ -172,16 +179,14 @@ def run_agent(
                 model_name=llm_response.model_name,
                 llm_output=llm_response.llm_output,
                 sandbox_input=code,
-                sandbox_output=observation,
-                retries=retries,
+                sandbox_output=feedback,
+                retries=retry,
             )
         )
         if answer is not None:
             success, solution, error = True, answer, None
             break
-        messages.append(
-            {"role": "user", "content": f"'observation': {observation}"}
-        )
+        messages.append({"role": "user", "content": f"'feedback': {feedback}"})
     return SolutionOutput(
         task_id=task_id,
         benchmark=benchmark,
