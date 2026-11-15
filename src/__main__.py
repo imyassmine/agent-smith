@@ -77,24 +77,24 @@ class ExecTimeout(BaseException):
     pass
 
 
-def _timeout(signum, frame):
+def _timeout(_signum, _frame):
     raise ExecTimeout()
 
 
-def lancer(code: str, namespace: dict) -> str:
-    boite = io.StringIO()
-    signal.signal(signal.SIGALRM, _timeout)
-    signal.alarm(EXEC_TIMEOUT)
+def execute_safe_code(code: str, namespace: dict) -> str:
+    buffer = io.StringIO()
+    signal.signal(signal.SIGALRM, _timeout) # enregistre la fonction à appeler quand le signal à surveiller arrive
+    signal.alarm(EXEC_TIMEOUT) # programme une alarme pour qu'elle se déclenche après EXEC_TIMEOUT
     try:
-        with contextlib.redirect_stdout(boite):
+        with contextlib.redirect_stdout(buffer):
             exec(code, namespace)
     except ExecTimeout:
-        boite.write(f"\n[TIMEOUT {EXEC_TIMEOUT}s: output above is partial]")
+        buffer.write("Execution hit the timeout and output is partial")
     except Exception:
-        boite.write(traceback.format_exc())
+        buffer.write(traceback.format_exc())
     finally:
-        signal.alarm(0)
-    return boite.getvalue()
+        signal.alarm(0) # annule l'alarme restante
+    return buffer.getvalue()
 
 
 SYSTEM_PROMPT = """You solve tasks by writing Python code.
@@ -128,11 +128,11 @@ def run_agent(
             try:
                 llm_response = generate(messages, stop=["<end_code>"])
                 break
-            except (httpx.HTTPError, KeyError, ValueError) as e:
+            except (httpx.HTTPStatusError, KeyError, ValueError) as e:
                 last_error = e
-                time.sleep(2**retries)
+                time.sleep(2**retries) # attente qui double à chaque échec
         else:
-            error = f"LLM call failed after {retries} retries: {last_error!r}"
+            error = f"LLM call failed after {retries} retries: {last_error}"
             break
         messages.append(
             {"role": "assistant", "content": llm_response.llm_output}
@@ -145,14 +145,14 @@ def run_agent(
             )
         else:
             try:
-                observation = lancer(code, namespace)
+                observation = execute_safe_code(code, namespace)
             except FinalAnswer as f:
-                answer, observation = str(f.value), "final_answer() called"
+                answer, observation = f.value, "final_answer() called"
             else:
                 if len(observation) > 4000:
                     observation = (
                         observation[:2000]
-                        + "\n[output truncated]\n"
+                        + "\nTool output was truncated due to size limits\n"
                         + observation[-2000:]
                     )
                 observation = observation or "(no output, use print())"
@@ -171,7 +171,7 @@ def run_agent(
                 api_url=llm_response.api_url,
                 model_name=llm_response.model_name,
                 llm_output=llm_response.llm_output,
-                sandbox_input=code or "",
+                sandbox_input=code,
                 sandbox_output=observation,
                 retries=retries,
             )
