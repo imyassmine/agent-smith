@@ -76,7 +76,7 @@ class FinalAnswer(BaseException):
 def final_answer(value: str) -> None:
     if not isinstance(value, str):
         raise TypeError(
-            "final_answer() expects a string containing the solution code, "
+            "final_answer() expects a string, "
             f"got {type(value).__name__}"
         )
     raise FinalAnswer(value)
@@ -118,7 +118,7 @@ Reply with a short thought, then ONE code block:
 <end_code>
 Your code is executed and you receive what it printed as a feedback.
 Use print() to see values. When you have the answer, call final_answer(answer)
-where answer is a string.
+where answer is a string containing the solution code.
 """
 
 
