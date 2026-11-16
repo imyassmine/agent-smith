@@ -1,18 +1,16 @@
-import contextlib, io, traceback, os, time, httpx, datetime, re, signal
+import contextlib, io, traceback, os, time, httpx, signal
 from dotenv import load_dotenv
 from dataclasses import dataclass
-from pydantic import Field
+from pydantic import BaseModel, Field
 from models import SolutionOutput, StepMetrics
 
 load_dotenv()
 
 MAX_RETRIES = 3
 EXEC_TIMEOUT = 30  # secondes
-SIZE_LIMIT = 4000
+SIZE_LIMIT = 1000
 
-
-@dataclass
-class LLMResponse:
+class LLMResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     request_time_ms: float
@@ -56,14 +54,14 @@ def generate(
     )
 
 
-def extract_code(text: str) -> tuple[str, str] | None:
+def extract_code(text: str) -> tuple[str | None, str]:
     """Return the first Python code block before <end_code>, or None."""
     text = text.split("<end_code>")[0]
     parts = text.split("```python\n", 1)
     if len(parts) < 2:
-        return None
+        return None, ""
     feedback = (
-        "code block was malformed but was interpreted anyway\n"
+        "code block was malformed (closing ``` missing) but was interpreted anyway\n"
         if "```" not in parts[1]
         else ""
     )
@@ -76,6 +74,11 @@ class FinalAnswer(BaseException):
 
 
 def final_answer(value: str) -> None:
+    if not isinstance(value, str):
+        raise TypeError(
+            "final_answer() expects a string containing the solution code, "
+            f"got {type(value).__name__}"
+        )
     raise FinalAnswer(value)
 
 
@@ -113,8 +116,9 @@ Reply with a short thought, then ONE code block:
 # your code
 ```
 <end_code>
-Your code is executed and you receive what it printed as an feedback.
-Use print() to see values. When you have the answer, call final_answer(answer).
+Your code is executed and you receive what it printed as a feedback.
+Use print() to see values. When you have the answer, call final_answer(answer)
+where answer is a string.
 """
 
 
@@ -132,7 +136,7 @@ def run_agent(
     ]
 
     steps, requests = [], 0
-    error = "max_iterations reached"
+    success, solution, error = False, "", "max_iterations reached"
     for i in range(1, max_iterations + 1):
         for retry in range(MAX_RETRIES + 1):
             requests += 1
@@ -141,9 +145,11 @@ def run_agent(
                     messages, stop_sequences=["<end_code>"]
                 )
                 last_error = None
-            except httpx.HTTPStatusError as e:
+                break
+            except (httpx.HTTPError, KeyError, ValueError) as e:
                 last_error = e
-                time.sleep(2**retry)  # attente qui double à chaque échec
+                if retry < MAX_RETRIES:
+                    time.sleep(2**retry)  # attente qui double à chaque échec
         if last_error:
             error = f"LLM call failed after {retry} retries: {last_error}"
             break
@@ -153,6 +159,7 @@ def run_agent(
         code, feedback = extract_code(llm_response.llm_output)
         answer = None
         if code is None:
+            code = ""
             feedback = "No valid code block was found in the model’s response"
         else:
             try:
@@ -165,9 +172,9 @@ def run_agent(
             if answer is None:
                 if len(feedback) > SIZE_LIMIT:
                     feedback = (
-                        feedback[: SIZE_LIMIT / 2]
+                        feedback[: SIZE_LIMIT // 2]
                         + "\nTool output was truncated due to size limits\n"
-                        + feedback[-SIZE_LIMIT / 2 :]
+                        + feedback[-SIZE_LIMIT // 2 :]
                     )
         steps.append(
             StepMetrics(
