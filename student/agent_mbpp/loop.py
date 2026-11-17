@@ -1,14 +1,27 @@
 import contextlib, io, traceback, os, time, httpx, signal
 from dotenv import load_dotenv
-from dataclasses import dataclass
 from pydantic import BaseModel, Field
-from models import SolutionOutput, StepMetrics
+from .models import SolutionOutput, StepMetrics, MBPPTaskInput
 
 load_dotenv()
 
 MAX_RETRIES = 3
 EXEC_TIMEOUT = 30  # secondes
 SIZE_LIMIT = 1000
+
+
+def build_task_prompt(task: MBPPTaskInput) -> str:
+    parts = [
+        f"Task definition: {task.task_definition}",
+        f"Function definition: {task.function_definition}",
+    ]
+    parts.append("Imports needed by the tests: ")
+    parts.extend(task.test_imports)
+    parts.append("Tests that must pass: ")
+    parts.extend(task.test_list)
+    parts.append("Run these tests in your code before calling final_answer.")
+    return "\n".join(parts)
+
 
 class LLMResponse(BaseModel):
     input_tokens: int
@@ -23,7 +36,10 @@ class LLMResponse(BaseModel):
 
 
 def generate(
-    messages: list[dict], stop_sequences: list[str] | None = None
+    provider_url: str,
+    model_name: str,
+    messages: list[dict],
+    stop_sequences: list[str] | None = None,
 ) -> LLMResponse:
     """
     Calls LLM and returns the generated text and its metrics.
@@ -32,12 +48,13 @@ def generate(
     start_time = time.perf_counter()
     response = httpx.request(
         "POST",
-        f"{os.environ['BASE_URL']}/chat/completions",
+        f"{provider_url}/chat/completions",
         headers={"Authorization": f"Bearer {os.environ['GROQ_API_KEY']}"},
         json={
-            "model": os.environ["MODEL"],
+            "model": model_name,
             "messages": messages,
             "stop": stop_sequences,
+            "reasoning_effort": "low",
         },
         timeout=30.0,
     )
@@ -48,7 +65,7 @@ def generate(
         input_tokens=data["usage"]["prompt_tokens"],
         output_tokens=data["usage"]["completion_tokens"],
         request_time_ms=request_time_ms,
-        api_url=f"{os.environ['BASE_URL']}",
+        api_url=f"{provider_url}",
         model_name=data["model"],
         llm_output=data["choices"][0]["message"]["content"],
     )
@@ -76,8 +93,7 @@ class FinalAnswer(BaseException):
 def final_answer(value: str) -> None:
     if not isinstance(value, str):
         raise TypeError(
-            "final_answer() expects a string, "
-            f"got {type(value).__name__}"
+            f"final_answer() expects a string, got {type(value).__name__}"
         )
     raise FinalAnswer(value)
 
@@ -119,17 +135,35 @@ Reply with a short thought, then ONE code block:
 Your code is executed and you receive what it printed as a feedback.
 Use print() to see values. When you have the answer, call final_answer(answer)
 where answer is a string containing the solution code.
+Example:
+```python
+solution = '''
+def add(a, b):
+    return a + b
+'''
+exec(solution)
+assert add(1, 2) == 3
+print("tests passed")
+```
+<end_code>
+Then, once the tests pass:
+```python
+final_answer(solution)
+```
+<end_code>
 """
 
 
 def run_agent(
+    provider_url: str,
+    model_name: str,
     task: str,
     max_iterations: int = 10,
     task_id: str = "",
     benchmark: str = "mbpp",
 ) -> SolutionOutput:
     start = time.perf_counter()
-    namespace = {"final_answer": final_answer}
+    namespace = {"final_answer": final_answer, "__name__": "__main__"}
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
@@ -142,7 +176,10 @@ def run_agent(
             requests += 1
             try:
                 llm_response = generate(
-                    messages, stop_sequences=["<end_code>"]
+                    provider_url,
+                    model_name,
+                    messages,
+                    stop_sequences=["<end_code>"],
                 )
                 last_error = None
                 break
@@ -160,7 +197,10 @@ def run_agent(
         answer = None
         if code is None:
             code = ""
-            feedback = "No valid code block was found in the model’s response"
+            feedback = (
+                "No valid code block was found in the model’s response. "
+                "Reply with a ```python block ending with <end_code>."
+                )
         else:
             try:
                 feedback += (

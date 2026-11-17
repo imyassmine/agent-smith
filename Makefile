@@ -20,14 +20,14 @@ install:
 				@uv sync
 
 run:
-				@uv run python -m src $(ARGS)
+				@uv run python -m $(ARGS)
 
 debug:
-				@uv run python -m pdb -m src $(ARGS)
+				@uv run python -m pdb -m $(ARGS)
 
 clean:
 				$(call ANIMATION,Removing compiled files and caches)
-				@rm -rf __pycache__ */__pycache__ .pytest_cache .mypy_cache
+				@rm -rf __pycache__ */*/*/__pycache__ */__pycache__  */*/__pycache__ .pytest_cache .mypy_cache
 
 lint:
 				@uv run flake8 src
@@ -45,8 +45,8 @@ help:
 				@printf "Usage: make [target]\n"
 				@printf "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 				@printf "$(CYAN)install$(DEFAULT)		- Install project dependencies\n"
-				@printf "$(CYAN)run$(DEFAULT)		- Run the main script with optional arguments (use ARGS=\"<args>\" to pass arguments)\n"
-				@printf "$(CYAN)debug$(DEFAULT)		- Run the main script in debug mode with optional arguments (use ARGS=\"<args>\" to pass arguments)\n"
+				@printf "$(CYAN)run$(DEFAULT)		- Run the agent (use ARGS=\"<args>\" to pass agent name)\n"
+				@printf "$(CYAN)debug$(DEFAULT)		- Run the agent in debug mode (use ARGS=\"<args>\" to pass agent name)\n"
 				@printf "$(CYAN)clean$(DEFAULT)		- Remove compiled Python files and caches\n"
 				@printf "$(CYAN)lint$(DEFAULT)		- Run linter and type checker to ensure code quality\n"
 				@printf "$(CYAN)lint-strict$(DEFAULT)	- Run linter and type checker with strict settings\n"

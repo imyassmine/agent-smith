@@ -1,4 +1,5 @@
 """Tests for MoulinetteCLI.run_agent (hard timeout enforcement on the student agent)."""
+
 import os
 import sys
 import time
@@ -22,7 +23,10 @@ class TestRunAgent:
 
         cli = MoulinetteCLI()
         with pytest.raises(SystemExit) as exc_info:
-            cli.run_agent(time_limit=5, cmd=f"{sys.executable} -c 'import sys; sys.exit(3)'")
+            cli.run_agent(
+                time_limit=5,
+                cmd=f"{sys.executable} -c 'import sys; sys.exit(3)'",
+            )
         assert exc_info.value.code == 3
 
     def test_hanging_command_is_killed_at_time_limit(self):
@@ -32,7 +36,10 @@ class TestRunAgent:
         cli = MoulinetteCLI()
         start = time.monotonic()
         with pytest.raises(SystemExit) as exc_info:
-            cli.run_agent(time_limit=1, cmd=f"{sys.executable} -c 'import time; time.sleep(30)'")
+            cli.run_agent(
+                time_limit=1,
+                cmd=f"{sys.executable} -c 'import time; time.sleep(30)'",
+            )
         elapsed = time.monotonic() - start
 
         assert exc_info.value.code == 124
@@ -73,4 +80,6 @@ class TestRunAgent:
                 break
             time.sleep(0.1)
 
-        assert not child_alive, f"child pid {child_pid} survived the process-group kill"
+        assert not child_alive, (
+            f"child pid {child_pid} survived the process-group kill"
+        )

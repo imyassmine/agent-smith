@@ -13,7 +13,10 @@ DATA_DIR = Path(__file__).parent / "data"
 
 class MinimalCodeTask:
     """Minimal code task data."""
-    def __init__(self, task_id: int, task_definition: str, function_definition: str):
+
+    def __init__(
+        self, task_id: int, task_definition: str, function_definition: str
+    ):
         self.task_id = task_id
         self.task_definition = task_definition
         self.function_definition = function_definition
@@ -21,6 +24,7 @@ class MinimalCodeTask:
 
 class MinimalCodeTaskAndTests(MinimalCodeTask):
     """Minimal code task with tests."""
+
     def __init__(
         self,
         task_id: int,
@@ -42,31 +46,35 @@ def _load_tasks() -> List[dict]:
     """Load all tasks from sanitized_tasks.json."""
     output_path = DATA_DIR / "sanitized_tasks.json"
     if not output_path.exists():
-        raise FileNotFoundError(f"sanitized_tasks.json not found at {output_path}")
-    with open(output_path, 'r', encoding='utf-8') as f:
+        raise FileNotFoundError(
+            f"sanitized_tasks.json not found at {output_path}"
+        )
+    with open(output_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _get_task_by_id(task_id: int, with_tests: bool = True) -> Union[MinimalCodeTask, MinimalCodeTaskAndTests]:
+def _get_task_by_id(
+    task_id: int, with_tests: bool = True
+) -> Union[MinimalCodeTask, MinimalCodeTaskAndTests]:
     """Get a task by task_id."""
     tasks_data = _load_tasks()
     for task_data in tasks_data:
-        if task_data['task_id'] == task_id:
+        if task_data["task_id"] == task_id:
             if with_tests:
                 return MinimalCodeTaskAndTests(
-                    task_id=task_data['task_id'],
-                    task_definition=task_data['task_definition'],
-                    function_definition=task_data['function_definition'],
-                    split=task_data['split'],
-                    code=task_data['code'],
-                    test_imports=task_data.get('test_imports', []),
-                    test_list=task_data.get('test_list', []),
+                    task_id=task_data["task_id"],
+                    task_definition=task_data["task_definition"],
+                    function_definition=task_data["function_definition"],
+                    split=task_data["split"],
+                    code=task_data["code"],
+                    test_imports=task_data.get("test_imports", []),
+                    test_list=task_data.get("test_list", []),
                 )
             else:
                 return MinimalCodeTask(
-                    task_id=task_data['task_id'],
-                    task_definition=task_data['task_definition'],
-                    function_definition=task_data['function_definition'],
+                    task_id=task_data["task_id"],
+                    task_definition=task_data["task_definition"],
+                    function_definition=task_data["function_definition"],
                 )
     raise ValueError(f"Task ID {task_id} not found")
 
@@ -126,7 +134,10 @@ def run_code_in_docker(
             return False, stderr.strip() if stderr else stdout.strip()
 
     except docker.errors.NotFound:
-        return False, f"Docker image '{image}' not found. Run: docker pull {image}"
+        return (
+            False,
+            f"Docker image '{image}' not found. Run: docker pull {image}",
+        )
     except docker.errors.APIError as e:
         if "read timeout" in str(e).lower() or "timeout" in str(e).lower():
             return False, f"Execution timed out after {timeout} seconds"
@@ -182,9 +193,11 @@ class InteractMBPP:
         tasks_data = _load_tasks()
 
         if split:
-            task_ids = [t['task_id'] for t in tasks_data if t['split'] == split]
+            task_ids = [
+                t["task_id"] for t in tasks_data if t["split"] == split
+            ]
         else:
-            task_ids = [t['task_id'] for t in tasks_data]
+            task_ids = [t["task_id"] for t in tasks_data]
 
         return sorted(task_ids)
 
@@ -201,9 +214,10 @@ class InteractMBPP:
         """
         if task_id is None:
             import random
+
             tasks_data = _load_tasks()
             task_data = random.choice(tasks_data)
-            task_id = task_data['task_id']
+            task_id = task_data["task_id"]
 
         task = _get_task_by_id(task_id, with_tests=True)
 
@@ -213,8 +227,12 @@ class InteractMBPP:
             "task_definition": task.task_definition,
             "function_definition": task.function_definition,
             "split": task.split,
-            "public_test_imports": task.test_imports[1:] if len(task.test_imports) > 1 else [],
-            "public_test_list": task.test_list[1:] if len(task.test_list) > 1 else [],
+            "public_test_imports": task.test_imports[1:]
+            if len(task.test_imports) > 1
+            else [],
+            "public_test_list": task.test_list[1:]
+            if len(task.test_list) > 1
+            else [],
         }
 
         return result
@@ -255,8 +273,16 @@ class InteractMBPP:
             return result
 
         # Build test code
-        test_imports_code = "\n".join(task.test_imports[skip_first_k_tests:]) if task.test_imports else ""
-        test_code_str = "\n".join(task.test_list[skip_first_k_tests:]) if task.test_list else ""
+        test_imports_code = (
+            "\n".join(task.test_imports[skip_first_k_tests:])
+            if task.test_imports
+            else ""
+        )
+        test_code_str = (
+            "\n".join(task.test_list[skip_first_k_tests:])
+            if task.test_list
+            else ""
+        )
 
         full_code = code + "\n"
         if test_imports_code:
@@ -277,4 +303,5 @@ class InteractMBPP:
 def _fire_main():
     """Entry point for moulinette_mbpp CLI."""
     import fire
+
     fire.Fire(InteractMBPP)

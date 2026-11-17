@@ -156,3 +156,13 @@ class SandboxConfig(BaseModel):
     )
     max_execution_time_seconds: int = 30
     max_memory_mb: int = 512
+
+
+class MBPPTaskInput(BaseModel):
+    """Input for MBPP task evaluation."""
+
+    task_id: int
+    task_definition: str
+    function_definition: str
+    test_imports: List[str] = Field(default_factory=list)
+    test_list: List[str] = Field(default_factory=list)
