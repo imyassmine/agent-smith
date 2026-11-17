@@ -183,7 +183,7 @@ def run_agent(
                 )
                 last_error = None
                 break
-            except (httpx.HTTPError, KeyError, ValueError) as e:
+            except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
                 last_error = e
                 if retry < MAX_RETRIES:
                     time.sleep(2**retry)  # attente qui double à chaque échec
