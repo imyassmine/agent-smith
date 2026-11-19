@@ -10,7 +10,7 @@ define ANIMATION
 				sleep 0.02; \
 				done; \
 				printf "\n"
-ende
+endef
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
