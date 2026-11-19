@@ -1,13 +1,22 @@
-import contextlib, io, traceback, os, time, httpx, signal
+import os
+import sys
+import time
+from pathlib import Path
+
+import httpx
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from .models import SolutionOutput, StepMetrics, MBPPTaskInput
+
+from models import MBPPTaskInput, SandboxConfig, SolutionOutput, StepMetrics
+from sandbox import McpConnection, McpError, Sandbox
 
 load_dotenv()
 
 MAX_RETRIES = 3
-EXEC_TIMEOUT = 30  # secondes
 SIZE_LIMIT = 1000
+ROOT = Path(__file__).resolve().parents[2]  # repo root (configs + mcp server)
+MCP_SERVER = ROOT / "mcp_tools_mbpp.py"
+SANDBOX_CONFIG = ROOT / "sandbox_template.json"
 
 
 def build_task_prompt(task: MBPPTaskInput) -> str:
@@ -41,10 +50,6 @@ def generate(
     messages: list[dict],
     stop_sequences: list[str] | None = None,
 ) -> LLMResponse:
-    """
-    Calls LLM and returns the generated text and its metrics.
-    """
-
     start_time = time.perf_counter()
     response = httpx.request(
         "POST",
@@ -72,7 +77,6 @@ def generate(
 
 
 def extract_code(text: str) -> tuple[str | None, str]:
-    """Return the first Python code block before <end_code>, or None."""
     text = text.split("<end_code>")[0]
     parts = text.split("```python\n", 1)
     if len(parts) < 2:
@@ -85,45 +89,19 @@ def extract_code(text: str) -> tuple[str | None, str]:
     return parts[1].split("```")[0], feedback
 
 
-class FinalAnswer(BaseException):
-    def __init__(self, value: str) -> None:
-        self.value = value
+def load_sandbox_config() -> SandboxConfig:
+    if SANDBOX_CONFIG.exists():
+        return SandboxConfig.from_json_file(SANDBOX_CONFIG)
+    return SandboxConfig()
 
 
-def final_answer(value: str) -> None:
-    if not isinstance(value, str):
-        raise TypeError(
-            f"final_answer() expects a string, got {type(value).__name__}"
-        )
-    raise FinalAnswer(value)
-
-
-class ExecTimeout(BaseException):
-    pass
-
-
-def _timeout(_signum, _frame):
-    raise ExecTimeout()
-
-
-def execute_safe_code(code: str, namespace: dict) -> str:
-    buffer = io.StringIO()
-    signal.signal(
-        signal.SIGALRM, _timeout
-    )  # enregistre la fonction à appeler quand le signal à surveiller arrive
-    signal.alarm(
-        EXEC_TIMEOUT
-    )  # programme une alarme pour qu'elle se déclenche après EXEC_TIMEOUT
+def connect_mcp() -> "McpConnection | None":
     try:
-        with contextlib.redirect_stdout(buffer):
-            exec(code, namespace)
-    except ExecTimeout:
-        buffer.write("Execution hit the timeout and output is partial")
-    except Exception:
-        buffer.write(traceback.format_exc())
-    finally:
-        signal.alarm(0)  # annule l'alarme restante
-    return buffer.getvalue()
+        return McpConnection.stdio(f'"{sys.executable}" "{MCP_SERVER}"').start()
+    except (McpError, OSError) as error:  # no tools, but the agent still runs
+        print(f"warning: MCP server unavailable, running without tools: {error}",
+              file=sys.stderr)
+        return None
 
 
 SYSTEM_PROMPT = """You solve tasks by writing Python code.
@@ -132,7 +110,7 @@ Reply with a short thought, then ONE code block:
 # your code
 ```
 <end_code>
-Your code is executed and you receive what it printed as a feedback.
+Your code is executed in a sandbox and you receive what it printed as feedback.
 Use print() to see values. When you have the answer, call final_answer(answer)
 where answer is a string containing the solution code.
 Example:
@@ -141,9 +119,7 @@ solution = '''
 def add(a, b):
     return a + b
 '''
-exec(solution)
-assert add(1, 2) == 3
-print("tests passed")
+print(run_tests(code=solution, test_list=["assert add(1, 2) == 3"]))
 ```
 <end_code>
 Then, once the tests pass:
@@ -163,9 +139,32 @@ def run_agent(
     benchmark: str = "mbpp",
 ) -> SolutionOutput:
     start = time.perf_counter()
-    namespace = {"final_answer": final_answer, "__name__": "__main__"}
+    mcp = connect_mcp()
+    sandbox = Sandbox(load_sandbox_config(), mcp)
+    try:
+        sandbox.start()
+        system_prompt = SYSTEM_PROMPT + "\n" + sandbox.manual()
+        return _solve(sandbox, system_prompt, start, provider_url, model_name,
+                      task, max_iterations, task_id, benchmark)
+    finally:
+        sandbox.close()
+        if mcp is not None:
+            mcp.close()
+
+
+def _solve(
+    sandbox: Sandbox,
+    system_prompt: str,
+    start: float,
+    provider_url: str,
+    model_name: str,
+    task: str,
+    max_iterations: int,
+    task_id: str,
+    benchmark: str,
+) -> SolutionOutput:
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": task},
     ]
 
@@ -186,7 +185,7 @@ def run_agent(
             except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
                 last_error = e
                 if retry < MAX_RETRIES:
-                    time.sleep(2**retry)  # attente qui double à chaque échec
+                    time.sleep(2**retry)
         if last_error:
             error = f"LLM call failed after {retry} retries: {last_error}"
             break
@@ -202,13 +201,14 @@ def run_agent(
                 "Reply with a ```python block ending with <end_code>."
             )
         else:
-            try:
+            result = sandbox.execute(code)
+            if result.final_answer is not None:
+                answer = result.final_answer
+                feedback += result.output + "final_answer() called"
+            else:
                 feedback += (
-                    execute_safe_code(code, namespace)
-                    or "(no output, use print() to see values)"
-                )  # Rappel du prompt
-            except FinalAnswer as f:
-                answer, feedback = f.value, "final_answer() called"
+                    result.output or "(no output, use print() to see values)"
+                )
             if answer is None:
                 if len(feedback) > SIZE_LIMIT:
                     feedback = (
@@ -245,6 +245,6 @@ def run_agent(
         total_output_tokens=sum(s.output_tokens for s in steps),
         total_time_seconds=time.perf_counter() - start,
         steps=steps,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         error=error,
     )

@@ -1,8 +1,12 @@
-import argparse, sys
+import argparse
+import sys
 from pathlib import Path
-from .models import MBPPTaskInput, SolutionOutput
+
 from pydantic import ValidationError
-from .loop import run_agent, build_task_prompt
+
+from models import MBPPTaskInput
+
+from .loop import build_task_prompt, run_agent
 
 
 def main() -> int:

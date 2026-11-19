@@ -1,0 +1,58 @@
+{
+  "default_provider": "openrouter",
+  "default_model": "qwen/qwen3-coder:free",
+  "fallback_order": [
+    "groq",
+    "gemini",
+    "mistral"
+  ],
+  "providers": {
+    "openrouter": {
+      "name": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEYS",
+      "models": [
+        {
+          "name": "qwen/qwen3-coder:free"
+        },
+        {
+          "name": "deepseek/deepseek-chat-v3-0324:free"
+        }
+      ]
+    },
+    "groq": {
+      "name": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key_env": "GROQ_API_KEYS",
+      "models": [
+        {
+          "name": "openai/gpt-oss-20b"
+        },
+        {
+          "name": "llama-3.3-70b-versatile"
+        }
+      ]
+    },
+    "gemini": {
+      "name": "Google AI Studio",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "api_key_env": "GEMINI_API_KEYS",
+      "models": [
+        {
+          "name": "gemini-2.5-flash",
+          "max_tokens_per_call": 2048
+        }
+      ]
+    },
+    "mistral": {
+      "name": "Mistral AI",
+      "base_url": "https://api.mistral.ai/v1",
+      "api_key_env": "MISTRAL_API_KEYS",
+      "models": [
+        {
+          "name": "mistral-small-latest"
+        }
+      ]
+    }
+  }
+}

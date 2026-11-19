@@ -1,15 +1,17 @@
-import json, subprocess, sys
+import json
+import subprocess
+import sys
+
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("mbpp-tools")
 
 
-@mcp.tool()
+@mcp.tool(
+    description="Run candidate Python code against assert statements. "
+    'Returns a JSON string: {"success": bool, "output": str}.'
+)
 def run_tests(code: str, test_list: list[str]) -> str:
-    """Run candidate Python code against assert statements.
-
-    Returns a JSON string: {"success": bool, "output": str}.
-    """
     script = code + "\n" + "\n".join(test_list)
     try:
         completed_process = subprocess.run(
@@ -19,7 +21,7 @@ def run_tests(code: str, test_list: list[str]) -> str:
             timeout=30,
         )
     except subprocess.TimeoutExpired:
-        return json.dumps({"success": False, "output": f"Timeout after 30s"})
+        return json.dumps({"success": False, "output": "Timeout after 30s"})
     return json.dumps(
         {
             "success": completed_process.returncode == 0,

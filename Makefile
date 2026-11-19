@@ -30,12 +30,12 @@ clean:
 				@rm -rf __pycache__ */*/*/__pycache__ */__pycache__  */*/__pycache__ .pytest_cache .mypy_cache
 
 lint:
-				@uv run flake8 src
-				@uv run mypy src --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+				@uv run ruff check src tests mcp_tools_mbpp.py
+				@uv run ruff format --check src tests mcp_tools_mbpp.py
 
 lint-strict:
-				@uv run flake8 src
-				@uv run mypy src --strict
+				@uv run ruff check src tests mcp_tools_mbpp.py
+				@uv run ruff format --check src tests mcp_tools_mbpp.py
 
 test:
 				@uv run python -m pytest tests -v
