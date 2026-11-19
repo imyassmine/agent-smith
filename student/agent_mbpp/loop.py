@@ -1,4 +1,5 @@
 import contextlib, io, traceback, os, time, httpx, signal
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from .models import SolutionOutput, StepMetrics, MBPPTaskInput
@@ -8,6 +9,16 @@ load_dotenv()
 MAX_RETRIES = 3
 EXEC_TIMEOUT = 30  # secondes
 SIZE_LIMIT = 1000
+KEY_NAMES = {
+    "api.groq.com": "GROQ_API_KEY",
+    "openrouter.ai": "OPENROUTER_API_KEY",
+}
+
+
+def load_api_keys(provider_url: str) -> list[str]:
+    name = KEY_NAMES[urlparse(provider_url).hostname]
+    return [v for k, v in sorted(os.environ.items())
+            if k == name or k.startswith(name + "_")]
 
 
 def build_task_prompt(task: MBPPTaskInput) -> str:
@@ -37,6 +48,7 @@ class LLMResponse(BaseModel):
 
 def generate(
     provider_url: str,
+    api_key: str,
     model_name: str,
     messages: list[dict],
     stop_sequences: list[str] | None = None,
@@ -49,7 +61,7 @@ def generate(
     response = httpx.request(
         "POST",
         f"{provider_url}/chat/completions",
-        headers={"Authorization": f"Bearer {os.environ['GROQ_API_KEY']}"},
+        headers={"Authorization": f"Bearer {api_key}"},
         json={
             "model": model_name,
             "messages": messages,
@@ -171,11 +183,14 @@ def run_agent(
 
     steps, requests = [], 0
     success, solution, error = False, "", "max_iterations reached"
+    keys = load_api_keys(provider_url)
+    key_index = 0
     for i in range(1, max_iterations + 1):
         for retry in range(MAX_RETRIES + 1):
             requests += 1
             try:
                 llm_response = generate(
+                    keys[key_index],
                     provider_url,
                     model_name,
                     messages,
@@ -184,9 +199,14 @@ def run_agent(
                 last_error = None
                 break
             except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
+                if (
+                    isinstance(e, httpx.HTTPStatusError)
+                    and e.response.status_code == 429
+                    ):
+                    key_index = (key_index + 1) % len(keys) # clé suivante
                 last_error = e
                 if retry < MAX_RETRIES:
-                    time.sleep(2**retry)  # attente qui double à chaque échec
+                    time.sleep(2**retry) # attente qui double à chaque échec
         if last_error:
             error = f"LLM call failed after {retry} retries: {last_error}"
             break
