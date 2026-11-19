@@ -25,10 +25,6 @@ def python_type(schema: Dict[str, Any]) -> str:
     kind = schema.get("type")
     if kind == "array":
         return f"list[{python_type(schema.get('items', {}))}]"
-    if isinstance(kind, list):
-        return " | ".join(JSON_TO_PYTHON.get(k, "Any") for k in kind)
-    if "anyOf" in schema:
-        return " | ".join(python_type(s) for s in schema["anyOf"])
     return JSON_TO_PYTHON.get(kind, "Any")
 
 

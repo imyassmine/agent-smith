@@ -33,16 +33,16 @@ BLOCKED_EVENT_PREFIXES = (
     "webbrowser.",
 )
 PATH_EVENTS = {
-    "os.listdir": 1, "os.scandir": 1, "os.remove": 1, "os.rmdir": 1, "os.mkdir": 1,
-    "os.chmod": 1, "os.chown": 1, "os.chdir": 1, "os.truncate": 1, "os.utime": 1,
-    "os.rename": 2, "os.link": 2, "os.symlink": 2, "shutil.rmtree": 1, "glob.glob": 1,
+    "os.listdir", "os.scandir", "os.remove", "os.rmdir", "os.mkdir",
+    "os.chmod", "os.chown", "os.chdir", "os.truncate", "os.utime",
+    "os.rename", "os.link", "os.symlink", "shutil.rmtree", "glob.glob",
 }
 REMOVED_BUILTINS = ("input", "breakpoint", "exit", "quit", "help", "copyright",
                     "credits", "license")
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 
 
-# baseexception so `except Exception` in llm code can't catch it
+# baseexception so except Exception in llm code can't catch it
 class FinalAnswer(BaseException):
     def __init__(self, value):
         super().__init__(value)
@@ -54,7 +54,7 @@ class Channel:
         self._in = os.fdopen(os.dup(0), "r", encoding="utf-8")
         self._out = os.fdopen(os.dup(1), "w", encoding="utf-8")
         devnull = os.open(os.devnull, os.O_RDWR)
-        # private copies, so the code can't mess with the protocol
+        # private copies so the code cant mess with the protocol
         os.dup2(devnull, 0)
         os.dup2(devnull, 1)
         self._lock = threading.Lock()
@@ -113,15 +113,9 @@ def preimport(patterns):
     for pattern in patterns:
         base = pattern[:-2] if pattern.endswith(".*") else pattern
         try:
-            module = importlib.import_module(base)
+            importlib.import_module(base)
         except ImportError:
-            continue
-        if pattern.endswith(".*") and hasattr(module, "__path__"):
-            for info in pkgutil.iter_modules(module.__path__, base + "."):
-                try:
-                    importlib.import_module(info.name)
-                except Exception:
-                    pass
+            pass
 
 
 def make_audit_hook(roots, stdlib_roots):
@@ -141,15 +135,10 @@ def make_audit_hook(roots, stdlib_roots):
                 return
             raise PermissionError(
                 f"Sandbox: access to '{path}' is not allowed (allowed: {', '.join(roots)})")
-        count = PATH_EVENTS.get(event)
-        if count:
-            for path in args[:count]:
-                if path is None or isinstance(path, int):
-                    path = "."
-                if not is_inside(os.fsdecode(path), roots):
-                    raise PermissionError(
-                        f"Sandbox: access to '{os.fsdecode(path)}' is not allowed")
-
+        if event in PATH_EVENTS:
+            for path in args:
+                if isinstance(path, (str, bytes)) and not is_inside(os.fsdecode(path), roots):
+                    raise PermissionError(f"Sandbox: access to '{os.fsdecode(path)}' is not allowed")
     return audit
 
 
@@ -170,7 +159,7 @@ def limit_memory(max_mb, channel):
                 channel.send(type="memory_exceeded", limit_mb=max_mb)
                 os._exit(3)
             time.sleep(0.05)
-
+    threading.stack_size(256 * 1024)
     threading.Thread(target=watchdog, daemon=True).start()
 
 
@@ -186,7 +175,6 @@ def clean_traceback(exc):
 def build_namespace(channel, stream, config, functions, roots):
     patterns = config["authorized_imports"]
     real_import, real_open = builtins.__import__, builtins.open
-    real_exec, real_eval = builtins.exec, builtins.eval
 
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
         if level != 0:
@@ -208,26 +196,6 @@ def build_namespace(channel, stream, config, functions, roots):
         safe_builtins.pop(name, None)
     safe_builtins["__import__"] = guarded_import
     safe_builtins["open"] = guarded_open
-
-    # exec(code, {}) would get the real builtins otherwise
-    def _with_safe_builtins(globals_, locals_):
-        if globals_ is None:
-            caller = sys._getframe(2)
-            globals_, locals_ = caller.f_globals, (caller.f_locals if locals_ is None
-                                                    else locals_)
-        globals_["__builtins__"] = safe_builtins
-        return globals_, locals_
-
-    def safe_exec(source, globals=None, locals=None):
-        globals, locals = _with_safe_builtins(globals, locals)
-        return real_exec(source, globals, locals)
-
-    def safe_eval(source, globals=None, locals=None):
-        globals, locals = _with_safe_builtins(globals, locals)
-        return real_eval(source, globals, locals)
-
-    safe_builtins["exec"] = safe_exec
-    safe_builtins["eval"] = safe_eval
 
     def final_answer(answer):
         if not isinstance(answer, str):
