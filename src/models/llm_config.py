@@ -22,8 +22,11 @@ class ProviderConfig(BaseModel):
     request_timeout_seconds: float = Field(default=60.0, gt=0)
 
     def load_api_keys(self) -> List[str]:
-        raw = os.environ.get(self.api_key_env, "")
-        return [key.strip() for key in raw.split(",") if key.strip()]
+        # accept FOO_API_KEYS="a,b" and the standard FOO_API_KEY="a"
+        names = (self.api_key_env, self.api_key_env.removesuffix("S"))
+        raw = ",".join(os.environ.get(name, "") for name in names)
+        keys = [key.strip() for key in raw.split(",") if key.strip()]
+        return list(dict.fromkeys(keys))  # remove duplicates, keep order
 
     def get_model(self, name: str) -> Optional[ModelConfig]:
         return next((m for m in self.models if m.name == name), None)

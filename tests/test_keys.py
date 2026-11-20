@@ -17,3 +17,10 @@ def test_no_keys(monkeypatch):
     provider, _ = pick_model("models.json")
     with pytest.raises(ValueError):
         KeyRotator(provider)
+
+
+def test_single_standard_key(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEYS", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "solo")
+    provider, _ = pick_model("models.json")
+    assert KeyRotator(provider).current() == "solo"

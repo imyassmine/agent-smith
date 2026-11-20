@@ -27,6 +27,9 @@ def test_allowed_import_and_state_persists(sandbox):
     "import subprocess",
     "from socket import socket",
     "exec('import os', {})",
+    "print.__self__.__import__('_posixsubprocess')",
+    "print.__self__.__import__('subprocess').run(['ls'])",
+    "print.__self__.__import__('socket').socket()",
 ])
 def test_imports_outside_allowlist_are_refused(sandbox, code):
     assert "ImportError" in sandbox.execute(code).output
@@ -34,8 +37,6 @@ def test_imports_outside_allowlist_are_refused(sandbox, code):
 
 @pytest.mark.parametrize("code, event", [
     ("import random\nrandom._os.system('echo hacked')", "os.system"),
-    ("print.__self__.__import__('subprocess').run(['ls'])", "subprocess.Popen"),
-    ("s = print.__self__.__import__('socket')\ns.socket()", "socket.__new__"),
 ])
 def test_dangerous_actions_are_blocked(sandbox, code, event):
     output = sandbox.execute(code).output
@@ -127,13 +128,14 @@ def test_agent_loop_with_scripted_llm(monkeypatch):
         "Thought: tests pass.\n```python\nfinal_answer(sol)\n```\n",
     ])
 
-    def fake_generate(provider_url, model_name, messages, stop_sequences=None):
+    def fake_generate(provider_url, model_name, messages, api_key, stop_sequences=None):
         return loop.LLMResponse(input_tokens=10, output_tokens=5, request_time_ms=1.0,
                                 api_url=provider_url, model_name=model_name,
                                 llm_output=next(replies))
 
     monkeypatch.setattr(loop, "generate", fake_generate)
-    out = loop.run_agent("http://fake", "fake-model", "task", task_id="1")
+    monkeypatch.setenv("GROQ_API_KEYS", "fake-key")
+    out = loop.run_agent("https://api.groq.com/openai/v1", "fake-model", "task", task_id="1")
     assert out.success and out.solution == "def f():\n    return 1\n"
     assert '"success": true' in out.steps[0].sandbox_output
     assert "run_tests(" in out.system_prompt

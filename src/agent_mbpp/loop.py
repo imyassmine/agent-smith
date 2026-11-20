@@ -1,10 +1,11 @@
-import os
 import sys
 import time
 from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from llm.config import provider_for_url
+from llm.keys import KeyRotator
 from models import MBPPTaskInput, SandboxConfig, SolutionOutput, StepMetrics
 from sandbox import McpConnection, McpError, Sandbox
 
@@ -12,9 +13,12 @@ load_dotenv()
 
 MAX_RETRIES = 3
 SIZE_LIMIT = 1000
+MAX_TOKENS_PER_CALL = 400  # MBPP allows 1500 output tokens for the whole task
+TIME_BUDGET_SECONDS = 100  # MBPP limit is 120s, keep a margin to write the output
 ROOT = Path(__file__).resolve().parents[2]  # repo root (configs + mcp server)
 MCP_SERVER = ROOT / "mcp_tools_mbpp.py"
 SANDBOX_CONFIG = ROOT / "sandbox_template.json"
+MODELS_CONFIG = ROOT / "models.json"
 
 
 def build_task_prompt(task: MBPPTaskInput) -> str:
@@ -46,17 +50,19 @@ def generate(
     provider_url: str,
     model_name: str,
     messages: list[dict],
+    api_key: str,
     stop_sequences: list[str] | None = None,
 ) -> LLMResponse:
     start_time = time.perf_counter()
     response = httpx.request(
         "POST",
         f"{provider_url}/chat/completions",
-        headers={"Authorization": f"Bearer {os.environ['GROQ_API_KEY']}"},
+        headers={"Authorization": f"Bearer {api_key}"},
         json={
             "model": model_name,
             "messages": messages,
             "stop": stop_sequences,
+            "max_tokens": MAX_TOKENS_PER_CALL,
             "reasoning_effort": "low",
         },
         timeout=30.0,
@@ -137,13 +143,14 @@ def run_agent(
     benchmark: str = "mbpp",
 ) -> SolutionOutput:
     start = time.perf_counter()
+    keys = KeyRotator(provider_for_url(str(MODELS_CONFIG), provider_url))
     mcp = connect_mcp()
     sandbox = Sandbox(load_sandbox_config(), mcp)
     try:
         sandbox.start()
         system_prompt = SYSTEM_PROMPT + "\n" + sandbox.manual()
         return _solve(sandbox, system_prompt, start, provider_url, model_name,
-                      task, max_iterations, task_id, benchmark)
+                      task, max_iterations, task_id, benchmark, keys)
     finally:
         sandbox.close()
         if mcp is not None:
@@ -160,6 +167,7 @@ def _solve(
     max_iterations: int,
     task_id: str,
     benchmark: str,
+    keys: KeyRotator,
 ) -> SolutionOutput:
     messages = [
         {"role": "system", "content": system_prompt},
@@ -169,6 +177,9 @@ def _solve(
     steps, requests = [], 0
     success, solution, error = False, "", "max_iterations reached"
     for i in range(1, max_iterations + 1):
+        if time.perf_counter() - start > TIME_BUDGET_SECONDS:
+            error = "time budget exhausted"
+            break
         for retry in range(MAX_RETRIES + 1):
             requests += 1
             try:
@@ -176,12 +187,15 @@ def _solve(
                     provider_url,
                     model_name,
                     messages,
+                    keys.current(),
                     stop_sequences=["<end_code>"],
                 )
                 last_error = None
                 break
             except (httpx.HTTPError, KeyError, ValueError, IndexError) as e:
                 last_error = e
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+                    keys.next()  # rate limited: try the next key
                 if retry < MAX_RETRIES:
                     time.sleep(2**retry)
         if last_error:

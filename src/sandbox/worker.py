@@ -32,6 +32,8 @@ BLOCKED_EVENT_PREFIXES = (
     "winreg.",
     "webbrowser.",
 )
+# C modules that do dangerous things without firing their own audit event
+BLOCKED_MODULES = {"_posixsubprocess", "_ctypes", "_socket", "_ssl", "_multiprocessing"}
 PATH_EVENTS = {
     "os.listdir", "os.scandir", "os.remove", "os.rmdir", "os.mkdir",
     "os.chmod", "os.chown", "os.chdir", "os.truncate", "os.utime",
@@ -122,6 +124,8 @@ def make_audit_hook(roots, stdlib_roots):
     def audit(event, args):
         if event.startswith(BLOCKED_EVENT_PREFIXES):
             raise PermissionError(f"Sandbox: '{event}' is not allowed")
+        if event == "import" and args[0].split(".")[0] in BLOCKED_MODULES:
+            raise ImportError(f"Sandbox: import of '{args[0]}' is not allowed")
         if event == "open":
             path, mode, flags = args
             if path is None or isinstance(path, int):
