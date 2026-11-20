@@ -1,56 +1,65 @@
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ LAYOUT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SRC_DIR = src
+TESTS_DIR = tests
+ARGS =
 
-DEFAULT			= \033[0m
-GREEN			= \033[1;32m
-CYAN			= \033[1;36m
+ESC = $(shell printf '\033')
+BOLD = $(ESC)[1m
+PURPLE = $(ESC)[35m
+GREEN = $(ESC)[32m
+RED = $(ESC)[31m
+GREY = $(ESC)[90m
+CYAN = $(ESC)[36m
+RESET = $(ESC)[0m
 
-define ANIMATION
-				@for frame in ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏; do \
-				printf "$$frame $(1)...\r"; \
-				sleep 0.02; \
-				done; \
-				printf "\n"
-endef
+STEP = $(BOLD)$(PURPLE)➜
+OK = $(BOLD)$(GREEN)✔
+KO = $(BOLD)$(RED)✘
 
+help: logo
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "help" "show this help"
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "install" "install dependencies with uv sync"
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "run" "run a module, ex: make run ARGS=\"agent_mbpp --task-file t.json ...\""
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "debug" "same as run but inside pdb"
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "test" "run all tests with pytest"
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "lint" "check code and formatting (ruff)"
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "lint-strict" "same as lint for now"
+	@printf "  $(CYAN)%-16s$(RESET) %s\n" "clean" "remove python caches"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+logo:
+	@printf "$(BOLD)$(PURPLE)%s\n" '  ____  __  __ ___ _____ _   _ '
+	@printf "%s\n" ' / ___||  \/  |_ _|_   _| | | |'
+	@printf "%s\n" ' \___ \| |\/| || |  | | | |_| |'
+	@printf "%s\n" '  ___) | |  | || |  | | |  _  |'
+	@printf "%s$(RESET)\n" ' |____/|_|  |_|___| |_| |_| |_|'
+	@printf "$(GREY)   Agent Smith$(RESET)\n\n"
 
 install:
-				$(call ANIMATION,Installing project dependencies)
-				@uv sync
+	@echo "$(STEP) Installing dependencies$(RESET)"
+	@uv sync && echo "$(OK) Install done !$(RESET)" || (echo "$(KO) Install failed$(RESET)"; exit 1)
 
 run:
-				@uv run python -m $(ARGS)
+	@echo "$(STEP) Running $(ARGS) ...$(RESET)"
+	@uv run python -m $(ARGS)
 
 debug:
-				@uv run python -m pdb -m $(ARGS)
-
-clean:
-				$(call ANIMATION,Removing compiled files and caches)
-				@rm -rf __pycache__ */*/*/__pycache__ */__pycache__  */*/__pycache__ .pytest_cache .mypy_cache
-
-lint:
-				@uv run ruff check src tests mcp_tools_mbpp.py
-				@uv run ruff format --check src tests mcp_tools_mbpp.py
-
-lint-strict:
-				@uv run ruff check src tests mcp_tools_mbpp.py
-				@uv run ruff format --check src tests mcp_tools_mbpp.py
+	@echo "$(STEP) Debugging $(ARGS) ...$(RESET) $(GREY)(n next, s step, p x print, c continue)$(RESET)"
+	@uv run python -m pdb -m $(ARGS)
 
 test:
-				@uv run python -m pytest tests -v
+	@echo "$(STEP) Running tests ...$(RESET)"
+	@uv run python -m pytest $(TESTS_DIR) -v && echo "$(OK) All tests passed !$(RESET)" || (echo "$(KO) Some tests failed$(RESET)"; exit 1)
 
+lint:
+	@echo "$(STEP) running ruff check ...$(RESET)"; uv run ruff check $(SRC_DIR) $(TESTS_DIR); c=$$?; \
+	echo "$(STEP) running ruff format --check ...$(RESET)"; uv run ruff format --check $(SRC_DIR) $(TESTS_DIR); f=$$?; \
+	if [ $$c -eq 0 ] && [ $$f -eq 0 ]; then echo "$(OK) Lint OK !$(RESET)"; \
+	else echo "$(KO) Lint failed$(RESET) $(GREY)(fix with: uv run ruff format .)$(RESET)"; exit 1; fi
 
-help:
-				@printf "Usage: make [target]\n"
-				@printf "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-				@printf "$(CYAN)install$(DEFAULT)		- Install project dependencies\n"
-				@printf "$(CYAN)run$(DEFAULT)		- Run the agent (use ARGS=\"<args>\" to pass agent name)\n"
-				@printf "$(CYAN)debug$(DEFAULT)		- Run the agent in debug mode (use ARGS=\"<args>\" to pass agent name)\n"
-				@printf "$(CYAN)clean$(DEFAULT)		- Remove compiled Python files and caches\n"
-				@printf "$(CYAN)lint$(DEFAULT)		- Run linter and type checker to ensure code quality\n"
-				@printf "$(CYAN)lint-strict$(DEFAULT)	- Run linter and type checker with strict settings\n"
-				@printf "$(CYAN)test$(DEFAULT)		- Run tests using pytest\n"
-				@printf "$(CYAN)help$(DEFAULT)		- Show this help message\n"
+# todo: add stricter checks here later
+lint-strict: lint
 
-.PHONY:			install run debug clean lint lint-strict test help
+clean:
+	@find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) -prune -exec rm -rf {} +
+	@echo "$(OK) Cleaned !$(RESET)"
+
+.PHONY: help logo install run debug test lint lint-strict clean

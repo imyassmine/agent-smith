@@ -1,24 +1,15 @@
-# pyproject.toml: the single source of truth for the project (PEP 621).
-# Morgane's step-1 file (src layout) + the dependency versions from yassabda's repo.
-
 [project]
 name = "agent-smith"
 version = "0.1.0"
-description = "Code agent (Thought -> Code -> Observation) with a secure sandbox and MCP tools, for MBPP and SWE-bench."
-readme = "README.md"
-# The subject imposes Python 3.10: ">=3.10,<3.11" stops uv from picking 3.11+.
 requires-python = ">=3.10,<3.11"
 dependencies = [
-    "pydantic>=2.6",       # data models: task.json in, solution.json out, configs
-    "python-dotenv>=1.0",  # loads API keys from the .env file given at evaluation
-    "mcp>=1.9,<2",         # official MCP SDK: client (agent) + servers (mcp_tools_*.py)
-    "httpx>=0.28",         # HTTP client for the OpenAI-compatible LLM APIs
+    "pydantic>=2.6",       
+    "python-dotenv>=1.0",  
+	"mcp>=1.9,<2",
+    "httpx>=0.28",
 ]
-# NOT allowed by the subject: smolagents, langgraph, llama-index, crewai, autogen,
-# RestrictedPython. The agent loop and the sandbox security are our own code.
 
 [project.scripts]
-# Gives the `uv run sandbox ...` command required by the subject.
 sandbox = "sandbox.cli:main"
 
 [dependency-groups]
@@ -29,8 +20,6 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# "src layout": each folder in src/ becomes a top-level package once installed,
-# so `python -m agent_mbpp` and `from models import SolutionOutput` work from anywhere.
 packages = [
     "src/agent_mbpp",
     "src/agent_swebench",
