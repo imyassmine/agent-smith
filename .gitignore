@@ -12,3 +12,4 @@ LICENSE
 .ruff_cache
 
 trainer
+.DS_Store
