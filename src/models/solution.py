@@ -1,6 +1,4 @@
 from datetime import datetime
-from typing import List, Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -64,13 +62,13 @@ class SolutionOutput(BaseModel):
     total_time_seconds: float = Field(
         ..., description="Wall-clock time from agent start to finish"
     )
-    steps: List[StepMetrics] = Field(
+    steps: list[StepMetrics] = Field(
         default_factory=list, description="Per-step metrics, one entry per agent iteration"
     )
     system_prompt: str = Field(
         default="", description="Full system prompt sent to the LLM (for provenance checking)"
     )
-    error: Optional[str] = Field(
+    error: str | None = Field(
         default=None, description="Error message if the agent failed (None if successful)"
     )
     timestamp: str = Field(
@@ -79,7 +77,7 @@ class SolutionOutput(BaseModel):
     )
 
     @classmethod
-    def from_steps(cls, steps: List[StepMetrics], **fields) -> "SolutionOutput":
+    def from_steps(cls, steps: list[StepMetrics], **fields) -> "SolutionOutput":
         return cls(
             steps=steps,
             iterations=fields.pop("iterations", len(steps)),

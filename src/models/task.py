@@ -1,4 +1,3 @@
-from typing import List
 from pydantic import BaseModel, Field
 
 
@@ -6,8 +5,8 @@ class MBPPTaskInput(BaseModel):
     task_id: int
     task_definition: str
     function_definition: str
-    test_imports: List[str] = Field(default_factory=list)
-    test_list: List[str] = Field(default_factory=list)
+    test_imports: list[str] = Field(default_factory=list)
+    test_list: list[str] = Field(default_factory=list)
 
 
 class SWEBenchTaskInput(BaseModel):

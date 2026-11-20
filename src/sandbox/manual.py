@@ -1,5 +1,4 @@
-from typing import Any, Dict, List
-
+from typing import Any
 from models import SandboxConfig
 
 JSON_TO_PYTHON = {"string": "str", "integer": "int", "number": "float",
@@ -21,14 +20,14 @@ MCP_EXTRAS = [
 ]
 
 
-def python_type(schema: Dict[str, Any]) -> str:
+def python_type(schema: dict[str, Any]) -> str:
     kind = schema.get("type")
     if kind == "array":
         return f"list[{python_type(schema.get('items', {}))}]"
     return JSON_TO_PYTHON.get(kind, "Any")
 
 
-def functions_from_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def functions_from_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     functions = []
     for tool in tools:
         schema = tool.get("input_schema") or {}
@@ -37,7 +36,7 @@ def functions_from_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         params, shown = [], []
         for name, prop in properties.items():
             params.append(name)
-            default = "" if name in required else " = None"
+            default = "" if name in required else f" = {prop.get('default')!r}"
             shown.append(f"{name}: {python_type(prop)}{default}")
         functions.append({
             "name": tool["name"], "kind": "tool", "params": params,
@@ -47,7 +46,7 @@ def functions_from_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return functions + MCP_EXTRAS
 
 
-def build_manual(config: SandboxConfig, functions: List[Dict[str, Any]]) -> str:
+def build_manual(config: SandboxConfig, functions: list[dict[str, Any]]) -> str:
     lines = [
         "## Sandbox manual",
         "Your code runs in a restricted Python 3.10 sandbox. Variables, functions and "

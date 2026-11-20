@@ -3,7 +3,6 @@ import importlib
 import io
 import json
 import os
-import pkgutil
 import signal
 import sys
 import threading
@@ -32,15 +31,16 @@ BLOCKED_EVENT_PREFIXES = (
     "winreg.",
     "webbrowser.",
 )
-# C modules that do dangerous things without firing their own audit event
-BLOCKED_MODULES = {"_posixsubprocess", "_ctypes", "_socket", "_ssl", "_multiprocessing"}
+BLOCKED_MODULES = {"_posixsubprocess", "_ctypes", "_socket", "_ssl",
+                "_multiprocessing"}
+
 PATH_EVENTS = {
     "os.listdir", "os.scandir", "os.remove", "os.rmdir", "os.mkdir",
     "os.chmod", "os.chown", "os.chdir", "os.truncate", "os.utime",
     "os.rename", "os.link", "os.symlink", "shutil.rmtree", "glob.glob",
 }
-REMOVED_BUILTINS = ("input", "breakpoint", "exit", "quit", "help", "copyright",
-                    "credits", "license")
+REMOVED_BUILTINS = {"input", "breakpoint", "exit", "quit", "help", "copyright",
+                    "credits", "license"}
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 
 
@@ -142,7 +142,8 @@ def make_audit_hook(roots, stdlib_roots):
         if event in PATH_EVENTS:
             for path in args:
                 if isinstance(path, (str, bytes)) and not is_inside(os.fsdecode(path), roots):
-                    raise PermissionError(f"Sandbox: access to '{os.fsdecode(path)}' is not allowed")
+                    raise PermissionError(
+                        f"Sandbox: access to '{os.fsdecode(path)}' is not allowed")
     return audit
 
 

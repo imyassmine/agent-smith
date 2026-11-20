@@ -1,8 +1,7 @@
 import json
 from pathlib import Path
-
+from types import SimpleNamespace
 import pytest
-
 from models import SandboxConfig
 from sandbox import McpConnection, Sandbox
 
@@ -119,8 +118,10 @@ def test_real_mbpp_mcp_server(tmp_path):
             assert json.loads(out)["success"] is True
 
 
-def test_agent_loop_with_scripted_llm(monkeypatch):
-    from agent_mbpp import loop
+def test_agent_loop_with_scripted_llm(tmp_path):
+    from agent_mbpp.loop import run_agent
+    from llm.client import LLMResponse
+    from models import MBPP_LIMITS, ModelConfig
 
     replies = iter([
         "Thought: write and test.\n```python\nsol = 'def f():\\n    return 1\\n'\n"
@@ -128,14 +129,19 @@ def test_agent_loop_with_scripted_llm(monkeypatch):
         "Thought: tests pass.\n```python\nfinal_answer(sol)\n```\n",
     ])
 
-    def fake_generate(provider_url, model_name, messages, api_key, stop_sequences=None):
-        return loop.LLMResponse(input_tokens=10, output_tokens=5, request_time_ms=1.0,
-                                api_url=provider_url, model_name=model_name,
-                                llm_output=next(replies))
+    class FakeLLM:
+        provider = SimpleNamespace(base_url="https://fake/v1")
+        model = ModelConfig(name="fake-model")
 
-    monkeypatch.setattr(loop, "generate", fake_generate)
-    monkeypatch.setenv("GROQ_API_KEYS", "fake-key")
-    out = loop.run_agent("https://api.groq.com/openai/v1", "fake-model", "task", task_id="1")
+        def complete(self, messages, max_tokens, timeout):
+            return LLMResponse(text=next(replies), input_tokens=10, output_tokens=5,
+                               request_time_ms=1.0, model_name="fake-model")
+
+    config = SandboxConfig(allowed_directories=[str(tmp_path)])
+    with McpConnection.stdio(f"python {ROOT / 'mcp_tools_mbpp.py'}") as mcp:
+        with Sandbox(config, mcp) as box:
+            out = run_agent(FakeLLM(), box, "task", MBPP_LIMITS, task_id="1")
     assert out.success and out.solution == "def f():\n    return 1\n"
     assert '"success": true' in out.steps[0].sandbox_output
     assert "run_tests(" in out.system_prompt
+    assert (out.iterations, out.total_input_tokens) == (2, 20)

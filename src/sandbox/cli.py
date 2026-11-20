@@ -2,14 +2,13 @@ import argparse
 import codeop
 import sys
 from contextlib import ExitStack
-from typing import List, Optional
 from pydantic import ValidationError
 from models import SandboxConfig
 from sandbox.mcp_client import McpConnection, McpError
 from sandbox.sandbox import Sandbox, SandboxError
 
 
-def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="sandbox", description="Interactive sandbox")
     parser.add_argument("config", nargs="?", help="sandbox JSON config (SandboxConfig)")
     transport = parser.add_mutually_exclusive_group()
@@ -20,8 +19,8 @@ def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def read_block() -> Optional[str]:
-    lines: List[str] = []
+def read_block() -> str | None:
+    lines: list[str] = []
     while True:
         try:
             line = input("... " if lines else ">>> ")
@@ -38,7 +37,7 @@ def read_block() -> Optional[str]:
             return source
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         config = SandboxConfig.from_json_file(args.config) if args.config else SandboxConfig()

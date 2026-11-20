@@ -23,10 +23,8 @@ build-backend = "hatchling.build"
 packages = [
     "src/agent_mbpp",
     "src/agent_swebench",
-    "src/core",
     "src/sandbox",
     "src/llm",
-    "src/tools",
     "src/models",
 ]
 
@@ -39,3 +37,6 @@ select = ["E", "F", "I", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint.isort]
+no-lines-before = ["third-party", "first-party", "local-folder"]

@@ -3,8 +3,7 @@ import json
 import shlex
 import sys
 import threading
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
@@ -18,17 +17,17 @@ class McpError(RuntimeError):
 
 
 class McpConnection:
-    def __init__(self, command: Optional[List[str]] = None, url: Optional[str] = None):
+    def __init__(self, command: list[str] | None = None, url: str | None = None):
         if (command is None) == (url is None):
             raise ValueError("give exactly one of command (stdio) or url (HTTP)")
         self.command, self.url = command, url
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
-        self._session: Optional[ClientSession] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._session: ClientSession | None = None
         self._ready = threading.Event()
-        self._stop: Optional[asyncio.Event] = None
-        self._error: Optional[BaseException] = None
-        self.tools: List[Dict[str, Any]] = []
+        self._stop: asyncio.Event | None = None
+        self._error: BaseException | None = None
+        self.tools: list[dict[str, Any]] = []
 
     @classmethod
     def stdio(cls, command_line: str) -> "McpConnection":
@@ -101,12 +100,12 @@ class McpConnection:
         future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
         return future.result(CALL_TIMEOUT_SECONDS)
 
-    async def _list_tools(self) -> List[Dict[str, Any]]:
+    async def _list_tools(self) -> list[dict[str, Any]]:
         result = await self._session.list_tools()
         return [{"name": t.name, "description": t.description or "",
                  "input_schema": t.inputSchema or {}} for t in result.tools]
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         result = self._call(self._session.call_tool(name, arguments))
         text = _content_to_text(result.content)
         if getattr(result, "isError", False):
@@ -140,14 +139,14 @@ class McpConnection:
                             "arguments": [a.name for a in (p.arguments or [])]}
                            for p in result.prompts])
 
-    def get_prompt(self, name: str, arguments: Optional[Dict[str, str]] = None) -> str:
+    def get_prompt(self, name: str, arguments: dict[str, str] | None = None) -> str:
         async def run() -> Any:
             return await self._session.get_prompt(name, arguments or {})
         result = self._call(run())
         return "\n".join(_content_to_text([m.content]) for m in result.messages)
 
 
-def _content_to_text(content: List[Any]) -> str:
+def _content_to_text(content: list[Any]) -> str:
     parts = []
     for block in content:
         text = getattr(block, "text", None)

@@ -1,8 +1,6 @@
 from pathlib import Path
-
 import pytest
 from pydantic import ValidationError
-
 from models import (
     MBPP_LIMITS,
     MBPPTaskInput,
@@ -49,6 +47,7 @@ def test_config_files_load():
     models = ModelsConfig.from_json_file(ROOT / "models.json")
     assert models.default_provider in models.providers
     assert MBPP_LIMITS.max_iterations == 10
+
 
 
 def test_models_json_typo_is_caught():
