@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from .models import SolutionOutput, StepMetrics, MBPPTaskInput
+from .mcp_client import call_tool
 
 load_dotenv()
 
@@ -13,25 +14,37 @@ KEY_NAMES = {
     "api.groq.com": "GROQ_API_KEY",
     "openrouter.ai": "OPENROUTER_API_KEY",
 }
-
+SYSTEM_PROMPT = """You solve tasks by writing Python code.
+Reply with a short thought, then ONE code block:
+```python
+# your code
+```
+<end_code>
+Your code is executed and you receive what it printed as a feedback.
+Use print() to see values. When you have the answer, call final_answer(answer)
+where answer is a string containing the solution code.
+Example:
+```python
+solution = '''
+def add(a, b):
+    return a + b
+'''
+exec(solution)
+assert add(1, 2) == 3
+print("tests passed")
+```
+<end_code>
+Then, once the tests pass:
+```python
+final_answer(solution)
+```
+<end_code>
+"""
 
 def load_api_keys(provider_url: str) -> list[str]:
     name = KEY_NAMES[urlparse(provider_url).hostname]
     return [v for k, v in sorted(os.environ.items())
             if k == name or k.startswith(name + "_")]
-
-
-def build_task_prompt(task: MBPPTaskInput) -> str:
-    parts = [
-        f"Task definition: {task.task_definition}",
-        f"Function definition: {task.function_definition}",
-    ]
-    parts.append("Imports needed by the tests: ")
-    parts.extend(task.test_imports)
-    parts.append("Tests that must pass: ")
-    parts.extend(task.test_list)
-    parts.append("Run these tests in your code before calling final_answer.")
-    return "\n".join(parts)
 
 
 class LLMResponse(BaseModel):
@@ -138,34 +151,6 @@ def execute_safe_code(code: str, namespace: dict) -> str:
     return buffer.getvalue()
 
 
-SYSTEM_PROMPT = """You solve tasks by writing Python code.
-Reply with a short thought, then ONE code block:
-```python
-# your code
-```
-<end_code>
-Your code is executed and you receive what it printed as a feedback.
-Use print() to see values. When you have the answer, call final_answer(answer)
-where answer is a string containing the solution code.
-Example:
-```python
-solution = '''
-def add(a, b):
-    return a + b
-'''
-exec(solution)
-assert add(1, 2) == 3
-print("tests passed")
-```
-<end_code>
-Then, once the tests pass:
-```python
-final_answer(solution)
-```
-<end_code>
-"""
-
-
 def run_agent(
     provider_url: str,
     model_name: str,
@@ -190,8 +175,8 @@ def run_agent(
             requests += 1
             try:
                 llm_response = generate(
-                    keys[key_index],
                     provider_url,
+                    keys[key_index],
                     model_name,
                     messages,
                     stop_sequences=["<end_code>"],

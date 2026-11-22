@@ -4,6 +4,18 @@ from .models import MBPPTaskInput, SolutionOutput
 from pydantic import ValidationError
 from .loop import run_agent, build_task_prompt
 
+def build_task_prompt(task: MBPPTaskInput) -> str:
+    parts = [
+        f"Task definition: {task.task_definition}",
+        f"Function definition: {task.function_definition}",
+    ]
+    parts.append("Imports needed by the tests: ")
+    parts.extend(task.test_imports)
+    parts.append("Tests that must pass: ")
+    parts.extend(task.test_list)
+    parts.append("Run these tests in your code before calling final_answer.")
+    return "\n".join(parts)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="MBPP code agent")
