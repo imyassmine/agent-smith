@@ -20,43 +20,27 @@ from models_public import (  # noqa: E402
 # Sandbox Configuration (with moulinette defaults)
 # =============================================================================
 
-
 class SandboxConfig(_SandboxConfigBase):
     """Sandbox configuration with moulinette-specific defaults."""
-
-    authorized_imports: List[str] = Field(
-        default_factory=lambda: [
-            "math",
-            "math.*",
-            "collections",
-            "collections.*",
-            "itertools",
-            "re",
-            "json",
-            "typing",
-            "typing.*",
-            "functools",
-            "operator",
-            "heapq",
-            "bisect",
-            "copy",
-            "string",
-            "random",
-            "datetime",
-            "datetime.*",
-            "array",
-            "cmath",
-        ]
-    )
-    allowed_directories: List[str] = Field(
-        default_factory=lambda: ["/testbed", "/tmp/agent"]
-    )
+    authorized_imports: List[str] = Field(default_factory=lambda: [
+        "math", "math.*",
+        "collections", "collections.*",
+        "itertools", "re", "json",
+        "typing", "typing.*",
+        "functools", "operator",
+        "heapq", "bisect", "copy",
+        "string", "random",
+        "datetime", "datetime.*",
+        "array", "cmath",
+    ])
+    allowed_directories: List[str] = Field(default_factory=lambda: [
+        "/testbed", "/tmp/agent"
+    ])
 
 
 # =============================================================================
 # MBPP Task Models (with from_moulinette factory)
 # =============================================================================
-
 
 class MBPPTaskInput(_MBPPTaskInputBase):
     """MBPP task input with moulinette factory method."""
@@ -76,7 +60,6 @@ class MBPPTaskInput(_MBPPTaskInputBase):
 # =============================================================================
 # SWE-bench Task Models (with from_moulinette factory)
 # =============================================================================
-
 
 class SWEBenchTaskInput(_SWEBenchTaskInputBase):
     """SWE-bench task input with moulinette factory method."""
@@ -98,10 +81,8 @@ class SWEBenchTaskInput(_SWEBenchTaskInputBase):
 # Metrics Limits (moulinette-internal)
 # =============================================================================
 
-
 class MetricsLimits(BaseModel):
     """Limits for validating student solution metrics."""
-
     max_iterations: int
     max_input_tokens: int
     max_output_tokens: int
@@ -130,7 +111,6 @@ class MetricsLimits(BaseModel):
 
 class MetricsValidationResult(BaseModel):
     """Result of validating solution metrics against limits."""
-
     valid: bool
     iterations_ok: bool
     input_tokens_ok: bool
@@ -147,37 +127,22 @@ class MetricsValidationResult(BaseModel):
 
         iterations_ok = solution.iterations <= limits.max_iterations
         if not iterations_ok:
-            errors.append(
-                f"Iterations {solution.iterations} exceeds limit {limits.max_iterations}"
-            )
+            errors.append(f"Iterations {solution.iterations} exceeds limit {limits.max_iterations}")
 
-        input_tokens_ok = (
-            solution.total_input_tokens <= limits.max_input_tokens
-        )
+        input_tokens_ok = solution.total_input_tokens <= limits.max_input_tokens
         if not input_tokens_ok:
-            errors.append(
-                f"Input tokens {solution.total_input_tokens} exceeds limit {limits.max_input_tokens}"
-            )
+            errors.append(f"Input tokens {solution.total_input_tokens} exceeds limit {limits.max_input_tokens}")
 
-        output_tokens_ok = (
-            solution.total_output_tokens <= limits.max_output_tokens
-        )
+        output_tokens_ok = solution.total_output_tokens <= limits.max_output_tokens
         if not output_tokens_ok:
-            errors.append(
-                f"Output tokens {solution.total_output_tokens} exceeds limit {limits.max_output_tokens}"
-            )
+            errors.append(f"Output tokens {solution.total_output_tokens} exceeds limit {limits.max_output_tokens}")
 
         time_ok = solution.total_time_seconds <= limits.max_time_seconds
         if not time_ok:
-            errors.append(
-                f"Time {solution.total_time_seconds}s exceeds limit {limits.max_time_seconds}s"
-            )
+            errors.append(f"Time {solution.total_time_seconds}s exceeds limit {limits.max_time_seconds}s")
 
         return cls(
-            valid=iterations_ok
-            and input_tokens_ok
-            and output_tokens_ok
-            and time_ok,
+            valid=iterations_ok and input_tokens_ok and output_tokens_ok and time_ok,
             iterations_ok=iterations_ok,
             input_tokens_ok=input_tokens_ok,
             output_tokens_ok=output_tokens_ok,

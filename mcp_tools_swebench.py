@@ -13,7 +13,9 @@ COMMAND_TIMEOUT_SECONDS = 300
 TESTS_TIMEOUT_SECONDS = 600
 
 
-def docker_exec(command: str, workdir: str = TESTBED, stdin: str = "",
+# docker
+
+def docker(command: str, workdir: str = TESTBED, stdin: str = "",
                 timeout: int = COMMAND_TIMEOUT_SECONDS) -> tuple[str, str, int]:
     """Runs a bash command in the container: returns (stdout, stderr, exit_code)."""
     if not CONTAINER:
@@ -28,7 +30,7 @@ def docker_exec(command: str, workdir: str = TESTBED, stdin: str = "",
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"Timeout after {timeout}s") from None
     except FileNotFoundError:
-        raise RuntimeError("docker is not installed") from None
+        raise RuntimeError("docker is not installed") from dNone
     # bytes instead of text=True: text mode turns \r\n into \n, edit_file would change files
     stdout = process.stdout.decode(errors="replace")
     return stdout, process.stderr.decode(errors="replace"), process.returncode
@@ -36,7 +38,7 @@ def docker_exec(command: str, workdir: str = TESTBED, stdin: str = "",
 
 def check_output(command: str) -> str:
     """Like docker_exec, but a failing command raises with its error message."""
-    stdout, stderr, exit_code = docker_exec(command)
+    stdout, stderr, exit_code = docker(command)
     if exit_code != 0:
         raise RuntimeError(stderr.strip() or stdout.strip() or f"exit code {exit_code}")
     return stdout
@@ -44,7 +46,7 @@ def check_output(command: str) -> str:
 
 def grep(options: str) -> str:
     """grep -rn in the testbed, reformatted as '/path/file.py:<line> <content>'."""
-    stdout, stderr, exit_code = docker_exec(f"grep -rnI {options} {TESTBED}")
+    stdout, stderr, exit_code = docker(f"grep -rnI {options} {TESTBED}")
     if exit_code == 1:
         return "no matches found"
     if exit_code != 0:
@@ -57,12 +59,14 @@ def grep(options: str) -> str:
     return "\n".join(results)
 
 
+# server tools
+
 @mcp.tool(
     description="Run a shell command in the repository's Docker container. "
     'Returns a JSON string: {"stdout": str, "stderr": str, "exit_code": int}.'
 )
 def run_command(command: str, workdir: str = TESTBED) -> str:
-    stdout, stderr, exit_code = docker_exec(command, workdir)
+    stdout, stderr, exit_code = docker(command, workdir)
     return json.dumps({"stdout": stdout, "stderr": stderr, "exit_code": exit_code})
 
 
@@ -90,7 +94,7 @@ def edit_file(filepath: str, old_str: str, new_str: str) -> str:
         raise ValueError(f"old_str was found {count} times in {filepath}, "
                          "it must be found exactly once")
     new_content = content.replace(old_str, new_str, 1)
-    _, stderr, exit_code = docker_exec(f"cat > {shlex.quote(filepath)}", stdin=new_content)
+    _, stderr, exit_code = docker(f"cat > {shlex.quote(filepath)}", stdin=new_content)
     if exit_code != 0:
         raise RuntimeError(stderr.strip())
     if filepath.endswith(".py"):
@@ -136,7 +140,7 @@ def find_references(name: str, filepath: str = "", line: int = 0) -> str:
     'Returns a JSON string: {"stdout": str, "stderr": str, "exit_code": int}.'
 )
 def run_tests() -> str:
-    stdout, stderr, exit_code = docker_exec(f"bash {EVAL_SCRIPT}", timeout=TESTS_TIMEOUT_SECONDS)
+    stdout, stderr, exit_code = docker(f"bash {EVAL_SCRIPT}", timeout=TESTS_TIMEOUT_SECONDS)
     return json.dumps({"stdout": stdout, "stderr": stderr, "exit_code": exit_code})
 
 

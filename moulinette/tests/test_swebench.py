@@ -1,5 +1,4 @@
 """Tests for moulinette SWE-bench module."""
-
 import pytest
 
 
@@ -40,23 +39,21 @@ class TestSWEBench:
     def test_list_instances(self):
         """Test listing SWE-bench instances."""
         from moulinette.swebench import InteractSweBench
-
+        
         sb = InteractSweBench()
-        instances = sb.list_instances(
-            repo_pattern="sympy", difficulty="<15 min fix"
-        )
-
+        instances = sb.list_instances(repo_pattern="sympy", difficulty="<15 min fix")
+        
         assert isinstance(instances, list)
 
     def test_get_instance_info(self):
         """Test getting instance info."""
         from moulinette.swebench import InteractSweBench
-
+        
         sb = InteractSweBench()
-
+        
         try:
             info = sb.get_instance_info(INSTANCE_ID)
-
+            
             assert "instance_id" in info
             assert info["instance_id"] == INSTANCE_ID
             assert "problem_statement" in info
@@ -69,21 +66,21 @@ class TestSWEBench:
         """Test getting/starting a container for an instance."""
         from moulinette.swebench import InteractSweBench
         import docker
-
+        
         sb = InteractSweBench()
         client = docker.from_env()
-
+        
         try:
             container_id = sb.get_container_id(INSTANCE_ID, auto_start=True)
-
+            
             assert container_id is not None
             assert isinstance(container_id, str)
             assert len(container_id) > 0
-
+            
             # Verify container exists and is running
             container = client.containers.get(container_id)
             assert container.status == "running"
-
+            
         finally:
             # Cleanup: stop and remove the container
             try:
@@ -97,21 +94,21 @@ class TestSWEBench:
         """Test executing hello world in a container."""
         from moulinette.swebench import InteractSweBench
         import docker
-
+        
         sb = InteractSweBench()
         client = docker.from_env()
         container_id = None
-
+        
         try:
             container_id = sb.get_container_id(INSTANCE_ID, auto_start=True)
             container = client.containers.get(container_id)
-
+            
             # Execute hello world
             exit_code, output = container.exec_run("echo 'Hello World'")
-
+            
             assert exit_code == 0
             assert "Hello World" in output.decode()
-
+            
         finally:
             # Cleanup
             if container_id:
@@ -126,15 +123,15 @@ class TestSWEBench:
         """Test that the correct patch passes evaluation."""
         from moulinette.swebench import InteractSweBench
         import docker
-
+        
         sb = InteractSweBench()
         client = docker.from_env()
         container_id = None
-
+        
         try:
             # Start a container
             container_id = sb.get_container_id(INSTANCE_ID, auto_start=True)
-
+            
             # Run evaluation with correct patch
             result = sb.eval(
                 INSTANCE_ID,
@@ -142,9 +139,9 @@ class TestSWEBench:
                 patch=CORRECT_PATCH,
                 timeout=300,
             )
-
+            
             assert result is True, "Correct patch should pass evaluation"
-
+            
         finally:
             # Cleanup
             if container_id:
@@ -159,15 +156,15 @@ class TestSWEBench:
         """Test that a bad patch fails evaluation."""
         from moulinette.swebench import InteractSweBench
         import docker
-
+        
         sb = InteractSweBench()
         client = docker.from_env()
         container_id = None
-
+        
         try:
             # Start a container
             container_id = sb.get_container_id(INSTANCE_ID, auto_start=True)
-
+            
             # Run evaluation with bad patch
             result = sb.eval(
                 INSTANCE_ID,
@@ -175,9 +172,9 @@ class TestSWEBench:
                 patch=BAD_PATCH,
                 timeout=300,
             )
-
+            
             assert result is False, "Bad patch should fail evaluation"
-
+            
         finally:
             # Cleanup
             if container_id:

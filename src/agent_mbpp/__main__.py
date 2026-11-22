@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from llm.client import LLMClient
 from models import MBPP_LIMITS, MBPPTaskInput, SandboxConfig, SolutionOutput
 from sandbox import McpConnection, McpError, Sandbox
-from .loop import build_task_prompt, run_agent
+from .loop import SYSTEM_PROMPT, build_task_prompt, run_agent
 
 ROOT = Path(__file__).resolve().parents[2]  # configs + mcp server
 MCP_SERVER = ROOT / "mcp_tools_mbpp.py"
@@ -33,7 +33,8 @@ def solve(task: MBPPTaskInput, args: argparse.Namespace) -> SolutionOutput:
     mcp = connect_mcp()
     try:
         with Sandbox(config, mcp) as sandbox:
-            return run_agent(llm, sandbox, build_task_prompt(task), limits, str(task.task_id))
+            return run_agent(llm, sandbox, SYSTEM_PROMPT, build_task_prompt(task), limits,
+                             str(task.task_id))
     finally:
         if mcp is not None:
             mcp.close()

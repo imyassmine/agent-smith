@@ -119,7 +119,7 @@ def test_real_mbpp_mcp_server(tmp_path):
 
 
 def test_agent_loop_with_scripted_llm(tmp_path):
-    from agent_mbpp.loop import run_agent
+    from agent_mbpp.loop import SYSTEM_PROMPT, run_agent
     from llm.client import LLMResponse
     from models import MBPP_LIMITS, ModelConfig
 
@@ -140,7 +140,7 @@ def test_agent_loop_with_scripted_llm(tmp_path):
     config = SandboxConfig(allowed_directories=[str(tmp_path)])
     with McpConnection.stdio(f"python {ROOT / 'mcp_tools_mbpp.py'}") as mcp:
         with Sandbox(config, mcp) as box:
-            out = run_agent(FakeLLM(), box, "task", MBPP_LIMITS, task_id="1")
+            out = run_agent(FakeLLM(), box, SYSTEM_PROMPT, "task", MBPP_LIMITS, task_id="1")
     assert out.success and out.solution == "def f():\n    return 1\n"
     assert '"success": true' in out.steps[0].sandbox_output
     assert "run_tests(" in out.system_prompt

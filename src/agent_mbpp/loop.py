@@ -4,7 +4,7 @@ from models import AgentLimits, MBPPTaskInput, SolutionOutput, StepMetrics
 from sandbox import Sandbox
 
 MAX_FEEDBACK_CHARS = 1000
-TIME_MARGIN_SECONDS = 20  # stop before the hard timeout, to have time to write the output
+TIME_MARGIN_SECONDS = 20
 NO_CODE_FEEDBACK = (
     "No valid code block was found in the model's response. "
     "Reply with a ```python block ending with <end_code>."
@@ -62,14 +62,14 @@ def extract_code(text: str) -> tuple[str | None, str]:
     return parts[1].split("```")[0], feedback
 
 
-def truncate(text: str) -> str:
-    if len(text) <= MAX_FEEDBACK_CHARS:
+def truncate(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
         return text
-    half = MAX_FEEDBACK_CHARS // 2
+    half = max_chars // 2
     return text[:half] + "\nTool output was truncated due to size limits\n" + text[-half:]
 
 
-def execute(sandbox: Sandbox, llm_output: str) -> tuple[str, str, str | None]:
+def execute(sandbox: Sandbox, llm_output: str, max_chars: int) -> tuple[str, str, str | None]:
     """Runs the code of one LLM reply: returns (code, feedback, final answer or None)."""
     code, feedback = extract_code(llm_output)
     if code is None:
@@ -78,7 +78,7 @@ def execute(sandbox: Sandbox, llm_output: str) -> tuple[str, str, str | None]:
     if result.final_answer is not None:
         return code, feedback + result.output + "final_answer() called", result.final_answer
     output = result.output or "(no output, use print() to see values)"
-    return code, truncate(feedback + output), None
+    return code, truncate(feedback + output, max_chars), None
 
 
 def budget_exhausted(steps: list[StepMetrics], limits: AgentLimits, deadline: float) -> str | None:
@@ -94,15 +94,17 @@ def budget_exhausted(steps: list[StepMetrics], limits: AgentLimits, deadline: fl
 def run_agent(
     llm: LLMClient,
     sandbox: Sandbox,
+    system_prompt: str,
     task: str,
     limits: AgentLimits,
     task_id: str,
     benchmark: str = "mbpp",
+    max_feedback_chars: int = MAX_FEEDBACK_CHARS,
 ) -> SolutionOutput:
     """The Thought -> Code -> Observation loop."""
     start = time.perf_counter()
     deadline = start + limits.timeout_seconds - TIME_MARGIN_SECONDS
-    system_prompt = SYSTEM_PROMPT + "\n" + sandbox.manual()
+    system_prompt = system_prompt + "\n" + sandbox.manual()
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": task},
@@ -125,7 +127,7 @@ def run_agent(
         except LLMError as e:
             error = str(e)
             break
-        code, feedback, answer = execute(sandbox, reply.text)
+        code, feedback, answer = execute(sandbox, reply.text, max_feedback_chars)
         steps.append(
             StepMetrics(
                 step=i,
