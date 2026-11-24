@@ -4,9 +4,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 SERVER = Path(__file__).resolve().parent.parent / "mcp_tools_mbpp.py"
-params = StdioServerParameters(
-    command=sys.executable, args=[str(SERVER)]
-)
+params = StdioServerParameters(command=sys.executable, args=[str(SERVER)])
 
 
 def call_tool(name: str, arguments: dict) -> str:
@@ -29,6 +27,7 @@ def list_tools():
                 return result.tools
 
     return asyncio.run(_list())
+
 
 for tool in list_tools():
     print(tool.name, list(tool.inputSchema["properties"]))

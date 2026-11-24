@@ -1,10 +1,12 @@
-import json, subprocess, sys
+import sys, json
+from subprocess import run, TimeoutExpired, CalledProcessError
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("mbpp-tools")
+
+mcp = FastMCP("mbpp-tools")  # crée un serveur MCP
 
 
-@mcp.tool()
+@mcp.tool()  # enregistre la fonction run_test comme outil MCP
 def run_tests(code: str, test_list: list[str]) -> str:
     """Run candidate Python code against assert statements.
 
@@ -12,13 +14,13 @@ def run_tests(code: str, test_list: list[str]) -> str:
     """
     script = code + "\n" + "\n".join(test_list)
     try:
-        completed_process = subprocess.run(
+        completed_process = run(
             [sys.executable, "-c", script],
             capture_output=True,
             text=True,
             timeout=30,
         )
-    except subprocess.TimeoutExpired:
+    except TimeoutExpired:
         return json.dumps({"success": False, "output": f"Timeout after 30s"})
     return json.dumps(
         {
@@ -26,7 +28,3 @@ def run_tests(code: str, test_list: list[str]) -> str:
             "output": completed_process.stdout + completed_process.stderr,
         }
     )
-
-
-if __name__ == "__main__":
-    mcp.run(transport="stdio")

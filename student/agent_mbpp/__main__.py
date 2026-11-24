@@ -4,6 +4,7 @@ from .models import MBPPTaskInput, SolutionOutput
 from pydantic import ValidationError
 from .loop import run_agent, build_task_prompt
 
+
 def build_task_prompt(task: MBPPTaskInput) -> str:
     parts = [
         f"Task definition: {task.task_definition}",

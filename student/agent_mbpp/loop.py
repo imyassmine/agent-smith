@@ -41,10 +41,14 @@ final_answer(solution)
 <end_code>
 """
 
+
 def load_api_keys(provider_url: str) -> list[str]:
     name = KEY_NAMES[urlparse(provider_url).hostname]
-    return [v for k, v in sorted(os.environ.items())
-            if k == name or k.startswith(name + "_")]
+    return [
+        v
+        for k, v in sorted(os.environ.items())
+        if k == name or k.startswith(name + "_")
+    ]
 
 
 class LLMResponse(BaseModel):
@@ -187,11 +191,11 @@ def run_agent(
                 if (
                     isinstance(e, httpx.HTTPStatusError)
                     and e.response.status_code == 429
-                    ):
-                    key_index = (key_index + 1) % len(keys) # clé suivante
+                ):
+                    key_index = (key_index + 1) % len(keys)  # clé suivante
                 last_error = e
                 if retry < MAX_RETRIES:
-                    time.sleep(2**retry) # attente qui double à chaque échec
+                    time.sleep(2**retry)  # attente qui double à chaque échec
         if last_error:
             error = f"LLM call failed after {retry} retries: {last_error}"
             break
