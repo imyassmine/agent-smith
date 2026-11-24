@@ -2,7 +2,7 @@ import argparse, sys
 from pathlib import Path
 from .models import MBPPTaskInput, SolutionOutput
 from pydantic import ValidationError
-from .loop import run_agent, build_task_prompt
+from .loop import run_agent
 
 
 def build_task_prompt(task: MBPPTaskInput) -> str:
@@ -14,7 +14,10 @@ def build_task_prompt(task: MBPPTaskInput) -> str:
     parts.extend(task.test_imports)
     parts.append("Tests that must pass: ")
     parts.extend(task.test_list)
-    parts.append("Run these tests in your code before calling final_answer.")
+    parts.append(
+        "Check your solution with run_tests(solution, tests) "
+        "before calling final_answer."
+    )
     return "\n".join(parts)
 
 
@@ -42,6 +45,7 @@ def main() -> int:
         task_id=str(task.task_id),
         benchmark="mbpp",
         max_iterations=args.max_iterations,
+        extra_namespace={"tests": task.test_imports + task.test_list},
     )
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
