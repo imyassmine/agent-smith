@@ -14,7 +14,7 @@ TYPE_NAMES = {
 }
 
 def call_tool(name: str, arguments: dict) -> str:
-    return asyncio.run(_call())
+    return asyncio.run(_call(name, arguments))
 
 async def _call(name: str, arguments: dict):
         async with stdio_client(params) as (read, write):
@@ -34,8 +34,6 @@ async def _list():
                 await session.initialize()
                 result = await session.list_tools()
                 return result.tools
-
-
 
 
 def _type_name(schema: dict) -> str:
@@ -68,8 +66,6 @@ def build_tool_wrappers(tools) -> dict:
 
         def wrapper(*args, _name=tool.name, _params=param_names, **kwargs):
             arguments = {**dict(zip(_params, args)), **kwargs}
-            # L'outil s'exécute hors sandbox : il n'est pas soumis au timeout
-            # d'exécution, on met donc l'alarme en pause pendant l'appel.
             paused = signal.setitimer(signal.ITIMER_REAL, 0)
             try:
                 return call_tool(_name, arguments)

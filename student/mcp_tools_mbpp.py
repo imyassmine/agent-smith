@@ -21,9 +21,7 @@ def run_tests(code: str, test_list: list[str]) -> str:
             timeout=10,
         )
     except TimeoutExpired:
-        return json.dumps(
-            {"success": False, "output": f"Timeout after 10s"}
-        )
+        return json.dumps({"success": False, "output": f"Timeout after 10s"})
     return json.dumps(
         {
             "success": completed_process.returncode == 0,

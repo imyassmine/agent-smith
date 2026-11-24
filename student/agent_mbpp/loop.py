@@ -1,14 +1,13 @@
-import contextlib, io, traceback, os, time, httpx, signal
+import os, time, httpx
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from .models import SolutionOutput, StepMetrics, MBPPTaskInput
-from .mcp_client import call_tool
+from .models import SolutionOutput, StepMetrics
+from .sandbox import Sandbox
 
 load_dotenv()
 
 MAX_RETRIES = 3
-EXEC_TIMEOUT = 30  # secondes
 SIZE_LIMIT = 1000
 KEY_NAMES = {
     "api.groq.com": "GROQ_API_KEY",
@@ -21,26 +20,26 @@ Reply with a short thought, then ONE code block:
 ```
 <end_code>
 Your code is executed and you receive what it printed as a feedback.
-Use print() to see values. When you have the answer, call final_answer(answer)
-where answer is a string containing the solution code.
+Use print() to see values. Variables persist between steps.
+The variable `tests` holds the task's import lines and assert statements.
+Write the function in a string `solution`, check it with run_tests, fix it if
+"success" is false, then call final_answer(solution): the answer is a string
+containing the solution code.
 Example:
 ```python
 solution = '''
 def add(a, b):
     return a + b
 '''
-exec(solution)
-assert add(1, 2) == 3
-print("tests passed")
+print(run_tests(solution, tests))
 ```
 <end_code>
-Then, once the tests pass:
+Then, once "success" is true:
 ```python
 final_answer(solution)
 ```
 <end_code>
 """
-
 
 def load_api_keys(provider_url: str) -> list[str]:
     name = KEY_NAMES[urlparse(provider_url).hostname]
@@ -114,62 +113,21 @@ def extract_code(text: str) -> tuple[str | None, str]:
     return parts[1].split("```")[0], feedback
 
 
-class FinalAnswer(BaseException):
-    def __init__(self, value: str) -> None:
-        self.value = value
-
-
-def final_answer(value: str) -> None:
-    if not isinstance(value, str):
-        raise TypeError(
-            f"final_answer() expects a string, got {type(value).__name__}"
-        )
-    raise FinalAnswer(value)
-
-
-class ExecTimeout(BaseException):
-    pass
-
-
-def _timeout(_signum, _frame):
-    raise ExecTimeout()
-
-
-def execute_safe_code(code: str, namespace: dict) -> str:
-    buffer = io.StringIO()
-    signal.signal(
-        signal.SIGALRM, _timeout
-    )  # enregistre la fonction à appeler quand le signal à surveiller arrive
-    signal.alarm(
-        EXEC_TIMEOUT
-    )  # programme une alarme pour qu'elle se déclenche après EXEC_TIMEOUT
-    try:
-        with contextlib.redirect_stdout(buffer):
-            exec(code, namespace)
-    except ExecTimeout:
-        buffer.write("Execution hit the timeout and output is partial")
-    except Exception:
-        buffer.write(traceback.format_exc())
-    finally:
-        signal.alarm(0)  # annule l'alarme restante
-    return buffer.getvalue()
-
-
 def run_agent(
     provider_url: str,
     model_name: str,
     task: str,
+    extra_namespace: dict,
     max_iterations: int = 10,
     task_id: str = "",
     benchmark: str = "mbpp",
 ) -> SolutionOutput:
     start = time.perf_counter()
-    namespace = {"final_answer": final_answer, "__name__": "__main__"}
+    sb = Sandbox(extra_namespace)
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": SYSTEM_PROMPT + "\n" + sb.manual},
         {"role": "user", "content": task},
     ]
-
     steps, requests = [], 0
     success, solution, error = False, "", "max_iterations reached"
     keys = load_api_keys(provider_url)
@@ -211,13 +169,8 @@ def run_agent(
                 "Reply with a ```python block ending with <end_code>."
             )
         else:
-            try:
-                feedback += (
-                    execute_safe_code(code, namespace)
-                    or "(no output, use print() to see values)"
-                )  # Rappel du prompt
-            except FinalAnswer as f:
-                answer, feedback = f.value, "final_answer() called"
+            output, answer = sb.execute_safe_code(code)
+            feedback += output or "No output, use print() to see values"
             if answer is None:
                 if len(feedback) > SIZE_LIMIT:
                     feedback = (
@@ -254,6 +207,6 @@ def run_agent(
         total_output_tokens=sum(s.output_tokens for s in steps),
         total_time_seconds=time.perf_counter() - start,
         steps=steps,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=SYSTEM_PROMPT + "\n" + sb.manual,
         error=error,
     )
