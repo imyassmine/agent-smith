@@ -1,10 +1,9 @@
 {
-  "default_provider": "openrouter",
-  "default_model": "qwen/qwen3-coder:free",
+  "default_provider": "gemini",
+  "default_model": "gemini-flash-lite-latest",
   "fallback_order": [
-    "groq",
     "gemini",
-    "mistral"
+    "openrouter"
   ],
   "providers": {
     "openrouter": {
@@ -13,23 +12,22 @@
       "api_key_env": "OPENROUTER_API_KEYS",
       "models": [
         {
-          "name": "qwen/qwen3-coder:free"
+          "name": "nvidia/nemotron-3.5-lightning:free"
         },
         {
-          "name": "deepseek/deepseek-chat-v3-0324:free"
-        }
-      ]
-    },
-    "groq": {
-      "name": "Groq",
-      "base_url": "https://api.groq.com/openai/v1",
-      "api_key_env": "GROQ_API_KEYS",
-      "models": [
-        {
-          "name": "openai/gpt-oss-20b"
+          "name": "nvidia/nemotron-3-ultra-550b-a55b:free"
         },
         {
-          "name": "llama-3.3-70b-versatile"
+          "name": "inclusionai/ling-3.2-flash:free"
+        },
+        {
+          "name": "baidu/ernie-5.5-flash-preview:free"
+        },
+        {
+          "name": "nvidia/nemotron-3.5-super-vl:free"
+        },
+        {
+          "name": "recursive/flint-v1.0:free"
         }
       ]
     },
@@ -39,18 +37,8 @@
       "api_key_env": "GEMINI_API_KEYS",
       "models": [
         {
-          "name": "gemini-2.5-flash",
+          "name": "gemini-flash-lite-latest",
           "max_tokens_per_call": 2048
-        }
-      ]
-    },
-    "mistral": {
-      "name": "Mistral AI",
-      "base_url": "https://api.mistral.ai/v1",
-      "api_key_env": "MISTRAL_API_KEYS",
-      "models": [
-        {
-          "name": "mistral-small-latest"
         }
       ]
     }

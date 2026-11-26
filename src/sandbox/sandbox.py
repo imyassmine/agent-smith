@@ -23,6 +23,8 @@ class ExecutionResult:
     final_answer: str | None = None
     timed_out: bool = False
     crashed: bool = False
+    failed: bool = False  # the code raised an exception
+    exited: bool = False  # the code raised SystemExit
 
 
 class SandboxError(RuntimeError):
@@ -50,16 +52,21 @@ class Sandbox:
         env = {"PATH": os.defpath, "PYTHONIOENCODING": "utf-8"}  # no api keys in the child
         self._proc = subprocess.Popen(
             [sys.executable, "-I", "-S", str(WORKER)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            cwd=workdir, env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            cwd=workdir,
+            env=env,
         )
         # a thread reads the worker's messages, so _recv can wait with a timeout
         self._messages = queue.Queue()
         self._reader = threading.Thread(
-            target=_read_messages, args=(self._proc.stdout, self._messages), daemon=True)
+            target=_read_messages, args=(self._proc.stdout, self._messages), daemon=True
+        )
         self._reader.start()
-        self._send({"type": "init", "config": self.config.model_dump(),
-                    "functions": self.functions})
+        self._send(
+            {"type": "init", "config": self.config.model_dump(), "functions": self.functions}
+        )
         message = self._recv(time.monotonic() + STARTUP_TIMEOUT_SECONDS)
         if not message or message.get("type") != "ready":
             self.close()
@@ -94,7 +101,8 @@ class Sandbox:
                 existing.append(directory)
         return existing[0] if existing else tempfile.gettempdir()
 
-    def execute(self, code: str) -> ExecutionResult:
+    def execute(self, code: str, time_limit: float | None = None) -> ExecutionResult:
+        """time_limit: hard limit in seconds for everything, MCP calls included."""
         notes = []
         if self._proc is None or self._proc.poll() is not None:
             if self._proc is not None:
@@ -105,7 +113,8 @@ class Sandbox:
         output: list[str] = []
         size = 0
         timeout = self.config.max_execution_time_seconds
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + timeout  # for the code only: MCP calls don't count
+        hard_deadline = time.monotonic() + time_limit if time_limit is not None else float("inf")
 
         def text(extra: str = "") -> str:
             body = "".join(notes + output)
@@ -115,19 +124,36 @@ class Sandbox:
 
         while True:
             try:
-                message = self._recv(deadline)
+                message = self._recv(min(deadline, hard_deadline))
             except EOFError:
                 code_ = self._proc.wait() if self._proc else None
                 self.close()
-                return ExecutionResult(text(
-                    f"\n[sandbox process crashed (exit code {code_}), probably out of "
-                    f"memory. Variables are lost.]\n"), crashed=True)
+                return ExecutionResult(
+                    text(
+                        f"\n[sandbox process crashed (exit code {code_}), probably out of "
+                        f"memory. Variables are lost.]\n"
+                    ),
+                    crashed=True,
+                )
+            if message is None and time.monotonic() >= hard_deadline:
+                self.close()
+                return ExecutionResult(
+                    text(
+                        "\n[The task's time budget ran out during execution: output is partial. "
+                        "The sandbox restarted: variables defined before are lost.]\n"
+                    ),
+                    timed_out=True,
+                )
             if message is None:
                 self.close()
-                return ExecutionResult(text(
-                    f"\n[Execution hit the timeout ({timeout}s) and output is partial. "
-                    f"The code was stopped and the sandbox restarted: variables "
-                    f"defined before are lost.]\n"), timed_out=True)
+                return ExecutionResult(
+                    text(
+                        f"\n[Execution hit the timeout ({timeout}s) and output is partial. "
+                        f"The code was stopped and the sandbox restarted: variables "
+                        f"defined before are lost.]\n"
+                    ),
+                    timed_out=True,
+                )
             kind = message.get("type")
             if kind == "output":
                 data = message.get("data", "")
@@ -136,33 +162,48 @@ class Sandbox:
                 size += len(data)
             elif kind == "call":
                 started = time.monotonic()
-                self._send(self._handle_call(message))
+                self._send(self._handle_call(message, hard_deadline - started))
                 deadline += time.monotonic() - started  # mcp time doesn't count
             elif kind == "final_answer":
                 return ExecutionResult(text(), final_answer=message.get("value"))
             elif kind == "done":
-                return ExecutionResult(text())
+                return ExecutionResult(text(), failed=bool(message.get("failed")))
             elif kind == "memory_exceeded":
                 self.close()
-                return ExecutionResult(text(
-                    f"\n[MemoryError: the code used more than "
-                    f"{message.get('limit_mb')} MB and was stopped. The sandbox "
-                    f"restarted: variables are lost.]\n"), crashed=True)
+                return ExecutionResult(
+                    text(
+                        f"\n[MemoryError: the code used more than "
+                        f"{message.get('limit_mb')} MB and was stopped. The sandbox "
+                        f"restarted: variables are lost.]\n"
+                    ),
+                    crashed=True,
+                )
+            # the code's exits must not stop the agent: they become feedback
             elif kind == "system_exit":
-                self.close()
-                raise SystemExit(message.get("code"))
+                return ExecutionResult(
+                    text(
+                        f"\n[SystemExit({message.get('code')!r}) was raised: exiting is not "
+                        f"allowed. Call final_answer() to finish.]\n"
+                    ),
+                    exited=True,
+                )
             elif kind == "keyboard_interrupt":
-                self.close()
-                raise KeyboardInterrupt
+                return ExecutionResult(
+                    text("\n[KeyboardInterrupt was raised by the code: it is not allowed.]\n"),
+                    failed=True,
+                )
 
-    def _handle_call(self, message: dict[str, Any]) -> dict[str, Any]:
+    def _handle_call(self, message: dict[str, Any], time_left: float) -> dict[str, Any]:
         if self.mcp is None:
             return {"type": "reply", "ok": False, "error": "no MCP server connected"}
+        if time_left <= 0:
+            return {"type": "reply", "ok": False, "error": "the task's time budget ran out"}
         args = message.get("arguments") or {}
         try:
             kind, name = message.get("kind"), message.get("name")
             if kind == "tool":
-                result = self.mcp.call_tool(name, args)
+                timeout = None if time_left == float("inf") else time_left
+                result = self.mcp.call_tool(name, args, timeout)
             elif kind == "list_resources":
                 result = self.mcp.list_resources()
             elif kind == "read_resource":

@@ -31,16 +31,35 @@ BLOCKED_EVENT_PREFIXES = (
     "winreg.",
     "webbrowser.",
 )
-BLOCKED_MODULES = {"_posixsubprocess", "_ctypes", "_socket", "_ssl",
-                "_multiprocessing"}
+BLOCKED_MODULES = {"_posixsubprocess", "_ctypes", "_socket", "_ssl", "_multiprocessing"}
 
 PATH_EVENTS = {
-    "os.listdir", "os.scandir", "os.remove", "os.rmdir", "os.mkdir",
-    "os.chmod", "os.chown", "os.chdir", "os.truncate", "os.utime",
-    "os.rename", "os.link", "os.symlink", "shutil.rmtree", "glob.glob",
+    "os.listdir",
+    "os.scandir",
+    "os.remove",
+    "os.rmdir",
+    "os.mkdir",
+    "os.chmod",
+    "os.chown",
+    "os.chdir",
+    "os.truncate",
+    "os.utime",
+    "os.rename",
+    "os.link",
+    "os.symlink",
+    "shutil.rmtree",
+    "glob.glob",
 }
-REMOVED_BUILTINS = {"input", "breakpoint", "exit", "quit", "help", "copyright",
-                    "credits", "license"}
+REMOVED_BUILTINS = {
+    "input",
+    "breakpoint",
+    "exit",
+    "quit",
+    "help",
+    "copyright",
+    "credits",
+    "license",
+}
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 
 
@@ -107,8 +126,7 @@ def is_import_allowed(name, patterns):
 
 def is_inside(path, roots):
     real = os.path.realpath(path)
-    return any(real == root or real.startswith(root.rstrip(os.sep) + os.sep)
-               for root in roots)
+    return any(real == root or real.startswith(root.rstrip(os.sep) + os.sep) for root in roots)
 
 
 def preimport(patterns):
@@ -134,16 +152,20 @@ def make_audit_hook(roots, stdlib_roots):
             if is_inside(path, roots):
                 return
             writing = (mode is not None and any(c in str(mode) for c in "wax+")) or (
-                flags is not None and flags & WRITE_FLAGS)
+                flags is not None and flags & WRITE_FLAGS
+            )
             if not writing and is_inside(path, stdlib_roots):
                 return
             raise PermissionError(
-                f"Sandbox: access to '{path}' is not allowed (allowed: {', '.join(roots)})")
+                f"Sandbox: access to '{path}' is not allowed (allowed: {', '.join(roots)})"
+            )
         if event in PATH_EVENTS:
             for path in args:
                 if isinstance(path, (str, bytes)) and not is_inside(os.fsdecode(path), roots):
                     raise PermissionError(
-                        f"Sandbox: access to '{os.fsdecode(path)}' is not allowed")
+                        f"Sandbox: access to '{os.fsdecode(path)}' is not allowed"
+                    )
+
     return audit
 
 
@@ -164,6 +186,7 @@ def limit_memory(max_mb, channel):
                 channel.send(type="memory_exceeded", limit_mb=max_mb)
                 os._exit(3)
             time.sleep(0.05)
+
     threading.stack_size(256 * 1024)
     threading.Thread(target=watchdog, daemon=True).start()
 
@@ -173,8 +196,7 @@ def clean_traceback(exc):
     message = "".join(traceback.format_exception_only(type(exc), exc))
     if not frames:
         return message
-    return ("Traceback (most recent call last):\n"
-            + "".join(traceback.format_list(frames)) + message)
+    return "Traceback (most recent call last):\n" + "".join(traceback.format_list(frames)) + message
 
 
 def build_namespace(channel, stream, config, functions, roots):
@@ -187,13 +209,15 @@ def build_namespace(channel, stream, config, functions, roots):
         if not is_import_allowed(name, patterns):
             raise ImportError(
                 f"Import of '{name}' is not allowed in the sandbox. "
-                f"Allowed modules: {', '.join(patterns)}")
+                f"Allowed modules: {', '.join(patterns)}"
+            )
         return real_import(name, globals, locals, fromlist, level)
 
     def guarded_open(file, mode="r", *args, **kwargs):
         if not isinstance(file, int) and not is_inside(os.fsdecode(file), roots):
             raise PermissionError(
-                f"Sandbox: access to '{file}' is not allowed (allowed: {', '.join(roots)})")
+                f"Sandbox: access to '{file}' is not allowed (allowed: {', '.join(roots)})"
+            )
         return real_open(file, mode, *args, **kwargs)
 
     safe_builtins = dict(vars(builtins))
@@ -207,8 +231,11 @@ def build_namespace(channel, stream, config, functions, roots):
             raise TypeError(f"final_answer() expects a string, got {type(answer).__name__}")
         raise FinalAnswer(answer)
 
-    namespace = {"__builtins__": safe_builtins, "__name__": "__main__",
-                 "final_answer": final_answer}
+    namespace = {
+        "__builtins__": safe_builtins,
+        "__name__": "__main__",
+        "final_answer": final_answer,
+    }
     for spec in functions:
         namespace[spec["name"]] = make_remote_function(channel, stream, spec)
     return namespace
@@ -219,8 +246,7 @@ def make_remote_function(channel, stream, spec):
 
     def remote(*args, **kwargs):
         if len(args) > len(params):
-            raise TypeError(f"{spec['name']}() takes {len(params)} arguments "
-                            f"({len(args)} given)")
+            raise TypeError(f"{spec['name']}() takes {len(params)} arguments ({len(args)} given)")
         for name, value in zip(params, args):  # noqa: B905
             if name in kwargs:
                 raise TypeError(f"{spec['name']}() got multiple values for '{name}'")
@@ -260,8 +286,11 @@ def run_code(code, namespace, channel, stream):
         return
     except BaseException as error:
         stream.write(clean_traceback(error))
+        stream.flush()
+        channel.send(type="done", failed=True)
+        return
     stream.flush()
-    channel.send(type="done")
+    channel.send(type="done", failed=False)
 
 
 def main():
@@ -270,8 +299,9 @@ def main():
     init = channel.recv()
     config = init["config"]
     roots = [os.path.realpath(d) for d in config["allowed_directories"]]
-    stdlib_roots = {os.path.realpath(p) for p in
-                    (os.path.dirname(os.__file__), sys.base_prefix, sys.prefix)}
+    stdlib_roots = {
+        os.path.realpath(p) for p in (os.path.dirname(os.__file__), sys.base_prefix, sys.prefix)
+    }
 
     preimport(config["authorized_imports"])
     stream = OutputStream(channel)

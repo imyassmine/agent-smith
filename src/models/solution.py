@@ -59,9 +59,7 @@ class SolutionOutput(BaseModel):
     )
     total_input_tokens: int = Field(..., description="Sum of input_tokens across all steps")
     total_output_tokens: int = Field(..., description="Sum of output_tokens across all steps")
-    total_time_seconds: float = Field(
-        ..., description="Wall-clock time from agent start to finish"
-    )
+    total_time_seconds: float = Field(..., description="Wall-clock time from agent start to finish")
     steps: list[StepMetrics] = Field(
         default_factory=list, description="Per-step metrics, one entry per agent iteration"
     )

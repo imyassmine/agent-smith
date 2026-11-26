@@ -1,22 +1,44 @@
 from typing import Any
 from models import SandboxConfig
 
-JSON_TO_PYTHON = {"string": "str", "integer": "int", "number": "float",
-                  "boolean": "bool", "object": "dict", "null": "None"}
+JSON_TO_PYTHON = {
+    "string": "str",
+    "integer": "int",
+    "number": "float",
+    "boolean": "bool",
+    "object": "dict",
+    "null": "None",
+}
 
 MCP_EXTRAS = [
-    {"name": "list_resources", "kind": "list_resources", "params": [],
-     "signature": "list_resources() -> str",
-     "doc": "JSON list of the MCP server's resources (uri, name, description)."},
-    {"name": "read_resource", "kind": "read_resource", "params": ["uri"],
-     "signature": "read_resource(uri: str) -> str",
-     "doc": "Text content of one MCP resource."},
-    {"name": "list_prompts", "kind": "list_prompts", "params": [],
-     "signature": "list_prompts() -> str",
-     "doc": "JSON list of the MCP server's prompts (name, description, arguments)."},
-    {"name": "get_prompt", "kind": "get_prompt", "params": ["name", "arguments"],
-     "signature": "get_prompt(name: str, arguments: dict = None) -> str",
-     "doc": "Text of one MCP prompt, filled with `arguments`."},
+    {
+        "name": "list_resources",
+        "kind": "list_resources",
+        "params": [],
+        "signature": "list_resources() -> str",
+        "doc": "JSON list of the MCP server's resources (uri, name, description).",
+    },
+    {
+        "name": "read_resource",
+        "kind": "read_resource",
+        "params": ["uri"],
+        "signature": "read_resource(uri: str) -> str",
+        "doc": "Text content of one MCP resource.",
+    },
+    {
+        "name": "list_prompts",
+        "kind": "list_prompts",
+        "params": [],
+        "signature": "list_prompts() -> str",
+        "doc": "JSON list of the MCP server's prompts (name, description, arguments).",
+    },
+    {
+        "name": "get_prompt",
+        "kind": "get_prompt",
+        "params": ["name", "arguments"],
+        "signature": "get_prompt(name: str, arguments: dict = None) -> str",
+        "doc": "Text of one MCP prompt, filled with `arguments`.",
+    },
 ]
 
 
@@ -38,11 +60,15 @@ def functions_from_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
             params.append(name)
             default = "" if name in required else f" = {prop.get('default')!r}"
             shown.append(f"{name}: {python_type(prop)}{default}")
-        functions.append({
-            "name": tool["name"], "kind": "tool", "params": params,
-            "signature": f"{tool['name']}({', '.join(shown)}) -> str",
-            "doc": (tool.get("description") or "").strip(),
-        })
+        functions.append(
+            {
+                "name": tool["name"],
+                "kind": "tool",
+                "params": params,
+                "signature": f"{tool['name']}({', '.join(shown)}) -> str",
+                "doc": (tool.get("description") or "").strip(),
+            }
+        )
     return functions + MCP_EXTRAS
 
 
@@ -73,6 +99,8 @@ def build_manual(config: SandboxConfig, functions: list[dict[str, Any]]) -> str:
             if doc_line.strip():
                 lines.append(f"    {doc_line.strip()}")
     if functions:
-        lines.append("Tool functions return strings (often JSON: use json.loads). "
-                     "If a tool fails, it raises RuntimeError with the reason.")
+        lines.append(
+            "Tool functions return strings (often JSON: use json.loads). "
+            "If a tool fails, it raises RuntimeError with the reason."
+        )
     return "\n".join(lines)

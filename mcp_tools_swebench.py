@@ -30,7 +30,7 @@ def docker(command: str, workdir: str = TESTBED, stdin: str = "",
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"Timeout after {timeout}s") from None
     except FileNotFoundError:
-        raise RuntimeError("docker is not installed") from dNone
+        raise RuntimeError("docker is not installed") from None
     # bytes instead of text=True: text mode turns \r\n into \n, edit_file would change files
     stdout = process.stdout.decode(errors="replace")
     return stdout, process.stderr.decode(errors="replace"), process.returncode
@@ -136,7 +136,7 @@ def find_references(name: str, filepath: str = "", line: int = 0) -> str:
 
 
 @mcp.tool(
-    description="Run the task's evaluation script (the tests). "
+    description="Run the task's evaluation script (tests) "
     'Returns a JSON string: {"stdout": str, "stderr": str, "exit_code": int}.'
 )
 def run_tests() -> str:

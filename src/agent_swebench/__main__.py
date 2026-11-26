@@ -79,8 +79,16 @@ def solve(task: SWEBenchTaskInput, args: argparse.Namespace) -> SolutionOutput:
         copy_eval_script(container, task.eval_script)
         server = f'"{sys.executable}" "{MCP_SERVER}" {container}'
         with McpConnection.stdio(server) as mcp, Sandbox(config, mcp) as sandbox:
-            return run_agent(llm, sandbox, SYSTEM_PROMPT, build_task_prompt(task), limits,
-                             task.instance_id, "swebench", MAX_FEEDBACK_CHARS)
+            return run_agent(
+                llm,
+                sandbox,
+                SYSTEM_PROMPT,
+                build_task_prompt(task),
+                limits,
+                task.instance_id,
+                "swebench",
+                MAX_FEEDBACK_CHARS,
+            )
     finally:
         remove_container(container)  # always, even if the agent crashed
 
@@ -90,8 +98,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="SWE-bench code agent")
     parser.add_argument("--task-file", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--model-name", required=True)
-    parser.add_argument("--provider-url", required=True)
+    parser.add_argument("--model-name", default=None)
+    parser.add_argument("--provider-url", default=None)
     parser.add_argument("--max-iterations", default=SWEBENCH_LIMITS.max_iterations, type=int)
     args = parser.parse_args()
     try:
@@ -107,8 +115,14 @@ def main() -> int:
         output = solve(task, args)
     except (Exception, SystemExit) as e:  # a crash = failed task: always write the output
         output = SolutionOutput(
-            task_id=task.instance_id, benchmark="swebench", success=False, solution="",
-            iterations=0, total_requests=0, total_input_tokens=0, total_output_tokens=0,
+            task_id=task.instance_id,
+            benchmark="swebench",
+            success=False,
+            solution="",
+            iterations=0,
+            total_requests=0,
+            total_input_tokens=0,
+            total_output_tokens=0,
             total_time_seconds=time.perf_counter() - start,
             error=f"{type(e).__name__}: {e}",
         )

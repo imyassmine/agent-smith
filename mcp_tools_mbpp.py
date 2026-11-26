@@ -1,9 +1,11 @@
 import json
-import subprocess
-import sys
+from pathlib import Path
 from mcp.server.fastmcp import FastMCP
+from models import SandboxConfig
+from sandbox import Sandbox
 
 mcp = FastMCP("mbpp-tools")
+SANDBOX_CONFIG = Path(__file__).resolve().with_name("sandbox_template.json")
 
 
 @mcp.tool(
@@ -11,22 +13,14 @@ mcp = FastMCP("mbpp-tools")
     'Returns a JSON string: {"success": bool, "output": str}.'
 )
 def run_tests(code: str, test_list: list[str]) -> str:
-    script = code + "\n" + "\n".join(test_list)
-    try:
-        completed_process = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        return json.dumps({"success": False, "output": "Timeout after 30s"})
-    return json.dumps(
-        {
-            "success": completed_process.returncode == 0,
-            "output": completed_process.stdout + completed_process.stderr,
-        }
-    )
+    config = SandboxConfig()
+    if SANDBOX_CONFIG.exists():
+        config = SandboxConfig.from_json_file(SANDBOX_CONFIG)
+    # the tested code comes from the model: it runs in the sandbox, like all its code
+    with Sandbox(config) as sandbox:
+        result = sandbox.execute(code + "\n" + "\n".join(test_list))
+    success = not (result.failed or result.timed_out or result.crashed or result.exited)
+    return json.dumps({"success": success, "output": result.output})
 
 
 if __name__ == "__main__":

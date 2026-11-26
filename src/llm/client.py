@@ -27,7 +27,9 @@ def provider_for_url(path: str | Path, url: str) -> ProviderConfig:
     raise ValueError(f"no provider with base_url '{url}' in {path}")
 
 
-def pick_model(path: str, model_name: str | None = None) -> tuple[ProviderConfig, ModelConfig]:
+def pick_model(
+    path: str | Path, model_name: str | None = None
+) -> tuple[ProviderConfig, ModelConfig]:
     config = ModelsConfig.from_json_file(path)
     name = model_name or config.default_model
     for provider_name in [config.default_provider, *config.fallback_order]:
@@ -61,19 +63,28 @@ class LLMClient:
         self.keys = KeyRotator(provider)
 
     @classmethod
-    def from_config(cls, path: str | Path, provider_url: str, model_name: str) -> "LLMClient":
+    def from_config(
+        cls, path: str | Path, provider_url: str | None, model_name: str | None
+    ) -> "LLMClient":
+        if provider_url is None:  # no URL given: models.json says which provider has the model
+            return cls(*pick_model(path, model_name))
+        model_name = model_name or ModelsConfig.from_json_file(path).default_model
         provider = provider_for_url(path, provider_url)
         # models not listed in models.json still work, with the default settings
         model = provider.get_model(model_name) or ModelConfig(name=model_name)
         return cls(provider, model)
 
     def complete(self, messages: list[dict], max_tokens: int, timeout: float) -> LLMResponse:
+        deadline = time.perf_counter() + timeout
         last_error = None
         for retry in range(self.provider.max_retries + 1):
             if retry:
                 time.sleep(2 ** (retry - 1))
+            time_left = deadline - time.perf_counter()
+            if time_left < 1:
+                break
             try:
-                response = self._request(messages, max_tokens, timeout)
+                response = self._request(messages, max_tokens, time_left)
                 response.retries = retry
                 return response
             except (httpx.HTTPError, KeyError, ValueError, IndexError, TypeError) as error:

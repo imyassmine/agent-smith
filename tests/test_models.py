@@ -32,8 +32,12 @@ def test_solution_totals_and_json_roundtrip():
         StepMetrics(step=2, input_tokens=200, output_tokens=30, request_time_ms=40.0),
     ]
     out = SolutionOutput.from_steps(
-        steps, task_id=str(2), benchmark="mbpp", success=True,
-        solution="def f(): return 1", total_time_seconds=1.5,
+        steps,
+        task_id=str(2),
+        benchmark="mbpp",
+        success=True,
+        solution="def f(): return 1",
+        total_time_seconds=1.5,
     )
     assert (out.iterations, out.total_requests) == (2, 4)
     assert (out.total_input_tokens, out.total_output_tokens) == (300, 50)
@@ -47,7 +51,6 @@ def test_config_files_load():
     models = ModelsConfig.from_json_file(ROOT / "models.json")
     assert models.default_provider in models.providers
     assert MBPP_LIMITS.max_iterations == 10
-
 
 
 def test_models_json_typo_is_caught():

@@ -12,10 +12,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="sandbox", description="Interactive sandbox")
     parser.add_argument("config", nargs="?", help="sandbox JSON config (SandboxConfig)")
     transport = parser.add_mutually_exclusive_group()
-    transport.add_argument("--mcp-stdio", metavar="CMD",
-                           help='MCP server command, e.g. "python mcp_tools_mbpp.py"')
-    transport.add_argument("--mcp-server", metavar="URL",
-                           help="MCP server URL (streamable HTTP)")
+    transport.add_argument(
+        "--mcp-stdio", metavar="CMD", help='MCP server command, e.g. "python mcp_tools_mbpp.py"'
+    )
+    transport.add_argument("--mcp-server", metavar="URL", help="MCP server URL (streamable HTTP)")
     return parser.parse_args(argv)
 
 
@@ -70,13 +70,12 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             try:
                 result = sandbox.execute(source)
-            except SystemExit as exit_:
-                print(f"[SystemExit({exit_.code!r}) raised by the code: bye]")
-                return 0
-            except KeyboardInterrupt:
+            except KeyboardInterrupt:  # Ctrl-C pressed while the code runs
                 print("\nKeyboardInterrupt")
                 continue
             print(result.output, end="" if result.output.endswith("\n") else "\n")
+            if result.exited:  # exit() in the interactive sandbox quits it
+                return 0
             if result.final_answer is not None:
                 print(f"[final_answer] {result.final_answer}")
     return 0

@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import json
 import shlex
 import sys
@@ -50,8 +51,9 @@ class McpConnection:
         if not self._ready.wait(CONNECT_TIMEOUT_SECONDS):
             raise McpError(f"MCP server {self.description} did not answer in time")
         if self._error is not None:
-            raise McpError(f"cannot connect to MCP server {self.description}: "
-                           f"{self._error}") from self._error
+            raise McpError(
+                f"cannot connect to MCP server {self.description}: {self._error}"
+            ) from self._error
         self.tools = self._call(self._list_tools())
         return self
 
@@ -94,19 +96,30 @@ class McpConnection:
                 self._ready.set()
                 await self._stop.wait()
 
-    def _call(self, coroutine: Any) -> Any:
+    def _call(self, coroutine: Any, timeout: float | None = None) -> Any:
         if self._loop is None or self._session is None:
             raise McpError("MCP connection is not open")
+        timeout = CALL_TIMEOUT_SECONDS if timeout is None else timeout
         future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
-        return future.result(CALL_TIMEOUT_SECONDS)
+        try:
+            return future.result(timeout)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise McpError(f"no answer from the MCP server after {timeout:.0f}s") from None
 
     async def _list_tools(self) -> list[dict[str, Any]]:
         result = await self._session.list_tools()
-        return [{"name": t.name, "description": t.description or "",
-                 "input_schema": t.inputSchema or {}} for t in result.tools]
+        return [
+            {
+                "name": t.name,
+                "description": t.description or "",
+                "input_schema": t.inputSchema or {},
+            }
+            for t in result.tools
+        ]
 
-    def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        result = self._call(self._session.call_tool(name, arguments))
+    def call_tool(self, name: str, arguments: dict[str, Any], timeout: float | None = None) -> str:
+        result = self._call(self._session.call_tool(name, arguments), timeout)
         text = _content_to_text(result.content)
         if getattr(result, "isError", False):
             raise McpError(text or f"tool {name} failed")
@@ -115,33 +128,48 @@ class McpConnection:
     def list_resources(self) -> str:
         async def run() -> Any:
             return await self._session.list_resources()
+
         try:
             result = self._call(run())
         except Exception as error:
             return f"[] (resources not available: {error})"
-        return json.dumps([{"uri": str(r.uri), "name": r.name,
-                            "description": r.description or ""} for r in result.resources])
+        return json.dumps(
+            [
+                {"uri": str(r.uri), "name": r.name, "description": r.description or ""}
+                for r in result.resources
+            ]
+        )
 
     def read_resource(self, uri: str) -> str:
         async def run() -> Any:
             return await self._session.read_resource(uri)
+
         result = self._call(run())
         return "\n".join(getattr(c, "text", "") or "" for c in result.contents)
 
     def list_prompts(self) -> str:
         async def run() -> Any:
             return await self._session.list_prompts()
+
         try:
             result = self._call(run())
         except Exception as error:
             return f"[] (prompts not available: {error})"
-        return json.dumps([{"name": p.name, "description": p.description or "",
-                            "arguments": [a.name for a in (p.arguments or [])]}
-                           for p in result.prompts])
+        return json.dumps(
+            [
+                {
+                    "name": p.name,
+                    "description": p.description or "",
+                    "arguments": [a.name for a in (p.arguments or [])],
+                }
+                for p in result.prompts
+            ]
+        )
 
     def get_prompt(self, name: str, arguments: dict[str, str] | None = None) -> str:
         async def run() -> Any:
             return await self._session.get_prompt(name, arguments or {})
+
         result = self._call(run())
         return "\n".join(_content_to_text([m.content]) for m in result.messages)
 
